@@ -1,0 +1,22 @@
+appId: jp.or.npo-kurofune.hansokanri
+productName: 搬送管理アプリ
+directories:
+  buildResources: build
+files:
+  - out/**/*
+  - package.json
+extraResources:
+  - from: src/main/db/migrations
+    to: migrations
+asarUnpack:
+  - '**/*.node'
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: true
+  perMachine: true
+  allowToChangeInstallationDirectory: false
+  deleteAppDataOnUninstall: false

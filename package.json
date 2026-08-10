@@ -1,0 +1,33 @@
+{
+  "name": "kurofune-hanso-kanri",
+  "version": "0.0.1",
+  "description": "搬送管理アプリ",
+  "main": "./out/main/index.js",
+  "author": "NPO法人くろふね",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit",
+    "postinstall": "electron-builder install-app-deps",
+    "build:win": "electron-vite build && electron-builder --win"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "43.3.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "typescript": "^7.0.2",
+    "vite": "^7.3.6"
+  },
+  "dependencies": {
+    "@fullcalendar/core": "^6.1.21",
+    "@fullcalendar/daygrid": "^6.1.21",
+    "@fullcalendar/interaction": "^6.1.21",
+    "@fullcalendar/react": "^6.1.21",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}
