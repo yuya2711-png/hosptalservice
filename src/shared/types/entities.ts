@@ -175,6 +175,7 @@ export interface TransportResult {
   kokuhorenClaimFlag: boolean
   snapshotCareLevel: string | null
   snapshotBenefitRate: number | null
+  cancellationFeeAmount: number | null
   remarks: string | null
   createdAt: string
   updatedAt: string
@@ -206,6 +207,11 @@ export interface ResultDestination {
   advancedExpense: number | null
   hospitalStaffName: string | null
   calculatedFee: number | null
+  // 請求書の内訳列に対応する金額(介護基本料/身体介助/付帯サービス/特別自費)
+  baseCareFeeAmount: number | null
+  physicalCareFeeAmount: number | null
+  ancillaryServiceFeeAmount: number | null
+  specialFeeAmount: number | null
 }
 
 export interface ResultDestinationDetail extends ResultDestination {
@@ -240,13 +246,17 @@ export type NewResultDestination = Pick<
   | 'advancedExpense'
   | 'hospitalStaffName'
   | 'calculatedFee'
+  | 'baseCareFeeAmount'
+  | 'physicalCareFeeAmount'
+  | 'ancillaryServiceFeeAmount'
+  | 'specialFeeAmount'
 > & { legs: NewResultLeg[] }
 
 // 実績のヘッダ更新で編集できるのはこれらのフィールドのみ(搬送日・利用者・元依頼は
 // 下書き生成時に確定し、以後は変更しない)
 export type ResultHeaderInput = Pick<
   TransportResult,
-  'kokuhorenClaimFlag' | 'snapshotCareLevel' | 'snapshotBenefitRate' | 'remarks'
+  'kokuhorenClaimFlag' | 'snapshotCareLevel' | 'snapshotBenefitRate' | 'cancellationFeeAmount' | 'remarks'
 >
 
 export interface NewTransportResultInput {
@@ -317,6 +327,76 @@ export type NewSpecialTransportRate = Pick<
   SpecialTransportRate,
   'category' | 'effectiveFrom' | 'amount' | 'remarks'
 >
+
+// 月次請求集計: 利用者ごとに国保連請求分/それ以外(自費等)の合計金額をまとめたもの
+export interface BillingSummaryItem {
+  userId: number
+  userName: string
+  kokuhorenAmount: number
+  selfPayAmount: number
+  totalAmount: number
+  resultCount: number
+}
+
+// 月次請求集計の内訳(利用者1人分の実績明細)
+export interface BillingDetailItem {
+  resultId: number
+  transportDate: string
+  kokuhorenClaimFlag: boolean
+  destinationNames: string[]
+  amount: number
+}
+
+// 請求書印刷用の明細1行(搬送先1件分)
+export interface InvoiceLineItem {
+  resultId: number
+  transportDate: string
+  destinationName: string
+  departureLocation: string | null
+  departureTime: string | null
+  arrivalTime: string | null
+  minutes: number | null
+  transportFee: number
+  baseCareFee: number
+  physicalCareFee: number
+  ancillaryServiceFee: number
+  specialFee: number
+  advancedExpense: number
+}
+
+// 請求書印刷用データ一式(利用者1人・1か月分)
+export interface InvoiceData {
+  userId: number
+  userName: string
+  userAddress: string | null
+  userPostalCode: string | null
+  yearMonth: string
+  lineItems: InvoiceLineItem[]
+  cancellationFeeTotal: number
+}
+
+// 請求書印刷時に手動で指定する調整項目
+export interface InvoiceAdjustments {
+  invoiceNumber: string
+  taxAmount: number
+  discountAmount: number
+  taxiTicketOffsetAmount: number
+}
+
+// CSVインポート結果のサマリ(利用者情報・被保険者証情報 共通)
+export interface ImportResult {
+  created: number
+  updated: number
+  skipped: number
+  errors: string[]
+}
+
+// バックアップファイル一覧の1件分(復元画面用)
+export interface BackupFileInfo {
+  fileName: string
+  sizeBytes: number
+  modifiedAt: string
+}
 
 // 新規作成時に入力するフィールドのみを抜き出すユーティリティ型
 export type NewDepartment = Pick<Department, 'name' | 'sortOrder'>

@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type { Department, NewDepartment } from '../../../shared/types/entities'
 
 interface DepartmentRow {
@@ -32,9 +33,10 @@ export function listDepartments(opts?: { includeInactive?: boolean }): Departmen
 
 export function createDepartment(input: NewDepartment): Department {
   const db = getDb()
+  const operator = getCurrentOperator()
   const result = db
-    .prepare('INSERT INTO M_Department (Name, SortOrder) VALUES (?, ?)')
-    .run(input.name, input.sortOrder ?? null)
+    .prepare('INSERT INTO M_Department (Name, SortOrder, CreatedBy, UpdatedBy) VALUES (?, ?, ?, ?)')
+    .run(input.name, input.sortOrder ?? null, operator, operator)
   const row = db
     .prepare('SELECT * FROM M_Department WHERE DepartmentId = ?')
     .get(result.lastInsertRowid) as unknown as DepartmentRow
@@ -52,8 +54,8 @@ export function updateDepartment(id: number, input: Partial<NewDepartment>): Dep
   const sortOrder = input.sortOrder !== undefined ? input.sortOrder : current.SortOrder
 
   db.prepare(
-    `UPDATE M_Department SET Name = ?, SortOrder = ?, UpdatedAt = datetime('now','localtime') WHERE DepartmentId = ?`
-  ).run(name, sortOrder, id)
+    `UPDATE M_Department SET Name = ?, SortOrder = ?, UpdatedAt = datetime('now','localtime'), UpdatedBy = ? WHERE DepartmentId = ?`
+  ).run(name, sortOrder, getCurrentOperator(), id)
 
   const row = db
     .prepare('SELECT * FROM M_Department WHERE DepartmentId = ?')
@@ -64,7 +66,7 @@ export function updateDepartment(id: number, input: Partial<NewDepartment>): Dep
 export function setDepartmentActive(id: number, isActive: boolean): void {
   getDb()
     .prepare(
-      `UPDATE M_Department SET IsActive = ?, UpdatedAt = datetime('now','localtime') WHERE DepartmentId = ?`
+      `UPDATE M_Department SET IsActive = ?, UpdatedAt = datetime('now','localtime'), UpdatedBy = ? WHERE DepartmentId = ?`
     )
-    .run(isActive ? 1 : 0, id)
+    .run(isActive ? 1 : 0, getCurrentOperator(), id)
 }

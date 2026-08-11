@@ -1,4 +1,4 @@
-import { useState, type ReactElement } from 'react'
+import { useEffect, useState, type ReactElement } from 'react'
 import { DepartmentsPage } from '@renderer/pages/masters/DepartmentsPage'
 import { DestinationsPage } from '@renderer/pages/masters/DestinationsPage'
 import { DriversPage } from '@renderer/pages/masters/DriversPage'
@@ -8,8 +8,10 @@ import { SpecialTransportRatesPage } from '@renderer/pages/masters/SpecialTransp
 import { RequestsPage, type OpenRequestRequest } from '@renderer/pages/requests/RequestsPage'
 import { CalendarPage } from '@renderer/pages/calendar/CalendarPage'
 import { ResultsPage } from '@renderer/pages/results/ResultsPage'
+import { BillingPage } from '@renderer/pages/billing/BillingPage'
 import { PrintPage } from '@renderer/pages/print/PrintPage'
 import { SystemStatusPage } from '@renderer/pages/SystemStatusPage'
+import { ImportPage } from '@renderer/pages/ImportPage'
 
 type NavKey =
   | 'masters-users'
@@ -21,7 +23,9 @@ type NavKey =
   | 'requests'
   | 'calendar'
   | 'results'
+  | 'billing'
   | 'print'
+  | 'import'
   | 'system'
 
 const NAV_ITEMS: { key: NavKey; label: string; group: string; implemented: boolean }[] = [
@@ -44,18 +48,38 @@ const NAV_ITEMS: { key: NavKey; label: string; group: string; implemented: boole
   { key: 'requests', label: '搬送依頼', group: '業務', implemented: true },
   { key: 'calendar', label: '搬送カレンダー', group: '業務', implemented: true },
   { key: 'results', label: '搬送実績', group: '業務', implemented: true },
+  { key: 'billing', label: '請求集計', group: '業務', implemented: true },
   { key: 'print', label: '印刷', group: '業務', implemented: true },
+  { key: 'import', label: 'CSVインポート', group: 'その他', implemented: true },
   { key: 'system', label: 'システム情報', group: 'その他', implemented: true }
 ]
 
 export function AppShell(): ReactElement {
   const [active, setActive] = useState<NavKey>('masters-users')
   const [openRequest, setOpenRequest] = useState<OpenRequestRequest | undefined>(undefined)
+  const [operator, setOperator] = useState<string | null>(null)
 
   function openRequestInRequestsPage(id: number | 'new', defaultTransportDate?: string): void {
     setOpenRequest((prev) => ({ id, defaultTransportDate, token: (prev?.token ?? 0) + 1 }))
     setActive('requests')
   }
+
+  async function changeOperator(): Promise<void> {
+    const input = window.prompt('操作者名を入力してください(入力欄・変更履歴に記録されます)', operator ?? '')
+    if (input === null) return
+    await window.api.operator.set(input)
+    setOperator(input.trim() || null)
+  }
+
+  useEffect(() => {
+    async function init(): Promise<void> {
+      const name = await window.api.operator.get()
+      setOperator(name)
+      if (!name) await changeOperator()
+    }
+    init()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const groups = Array.from(new Set(NAV_ITEMS.map((i) => i.group)))
 
@@ -71,6 +95,21 @@ export function AppShell(): ReactElement {
         }}
       >
         <h1 style={{ fontSize: 16 }}>搬送管理アプリ</h1>
+        <div
+          style={{
+            fontSize: 12,
+            color: '#666',
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between'
+          }}
+        >
+          <span>操作者: {operator ?? '未設定'}</span>
+          <button onClick={changeOperator} style={{ fontSize: 11, padding: '2px 6px' }}>
+            変更
+          </button>
+        </div>
         {groups.map((group) => (
           <div key={group} style={{ marginBottom: 16 }}>
             <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>{group}</div>
@@ -110,7 +149,9 @@ export function AppShell(): ReactElement {
         {active === 'requests' && <RequestsPage openRequest={openRequest} />}
         {active === 'calendar' && <CalendarPage onOpenRequest={openRequestInRequestsPage} />}
         {active === 'results' && <ResultsPage />}
+        {active === 'billing' && <BillingPage />}
         {active === 'print' && <PrintPage />}
+        {active === 'import' && <ImportPage />}
         {active === 'system' && <SystemStatusPage />}
       </main>
     </div>

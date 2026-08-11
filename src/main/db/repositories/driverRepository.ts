@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type { Driver, NewDriver } from '../../../shared/types/entities'
 
 interface DriverRow {
@@ -45,9 +46,19 @@ export function listDrivers(opts?: { includeInactive?: boolean; search?: string 
 
 export function createDriver(input: NewDriver): Driver {
   const db = getDb()
+  const operator = getCurrentOperator()
   const result = db
-    .prepare('INSERT INTO M_Driver (Name, NameKana, PhoneNumber, Remarks) VALUES (?, ?, ?, ?)')
-    .run(input.name, input.nameKana ?? null, input.phoneNumber ?? null, input.remarks ?? null)
+    .prepare(
+      'INSERT INTO M_Driver (Name, NameKana, PhoneNumber, Remarks, CreatedBy, UpdatedBy) VALUES (?, ?, ?, ?, ?, ?)'
+    )
+    .run(
+      input.name,
+      input.nameKana ?? null,
+      input.phoneNumber ?? null,
+      input.remarks ?? null,
+      operator,
+      operator
+    )
   const row = db
     .prepare('SELECT * FROM M_Driver WHERE DriverId = ?')
     .get(result.lastInsertRowid) as unknown as DriverRow
@@ -70,8 +81,8 @@ export function updateDriver(id: number, input: Partial<NewDriver>): Driver {
 
   db.prepare(
     `UPDATE M_Driver SET Name = ?, NameKana = ?, PhoneNumber = ?, Remarks = ?,
-     UpdatedAt = datetime('now','localtime') WHERE DriverId = ?`
-  ).run(merged.name, merged.nameKana, merged.phoneNumber, merged.remarks, id)
+     UpdatedAt = datetime('now','localtime'), UpdatedBy = ? WHERE DriverId = ?`
+  ).run(merged.name, merged.nameKana, merged.phoneNumber, merged.remarks, getCurrentOperator(), id)
 
   const row = db
     .prepare('SELECT * FROM M_Driver WHERE DriverId = ?')
@@ -82,7 +93,7 @@ export function updateDriver(id: number, input: Partial<NewDriver>): Driver {
 export function setDriverActive(id: number, isActive: boolean): void {
   getDb()
     .prepare(
-      `UPDATE M_Driver SET IsActive = ?, UpdatedAt = datetime('now','localtime') WHERE DriverId = ?`
+      `UPDATE M_Driver SET IsActive = ?, UpdatedAt = datetime('now','localtime'), UpdatedBy = ? WHERE DriverId = ?`
     )
-    .run(isActive ? 1 : 0, id)
+    .run(isActive ? 1 : 0, getCurrentOperator(), id)
 }

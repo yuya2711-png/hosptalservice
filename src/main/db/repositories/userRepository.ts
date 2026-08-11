@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type {
   NewUser,
   NewUserInsuranceCertificate,
@@ -77,13 +78,14 @@ export function getUser(id: number): User | null {
 
 export function createUser(input: NewUser): User {
   const db = getDb()
+  const operator = getCurrentOperator()
   const result = db
     .prepare(
       `INSERT INTO M_User (
         Name, NameKana, Sex, BirthDate, PostalCode, Address, PhoneNumber,
         TransactionStatus, LivelihoodProtectionFlag, SpecialTransportCategory,
-        WheelchairFlag, CareManager, ContractDate, Remarks
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        WheelchairFlag, CareManager, ContractDate, Remarks, CreatedBy, UpdatedBy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.name,
@@ -99,7 +101,9 @@ export function createUser(input: NewUser): User {
       input.wheelchairFlag ? 1 : 0,
       input.careManager ?? null,
       input.contractDate ?? null,
-      input.remarks ?? null
+      input.remarks ?? null,
+      operator,
+      operator
     )
   return mapUserRow(
     db.prepare('SELECT * FROM M_User WHERE UserId = ?').get(result.lastInsertRowid) as unknown as UserRow
@@ -149,7 +153,7 @@ export function updateUser(id: number, input: Partial<NewUser>): User {
       Name = ?, NameKana = ?, Sex = ?, BirthDate = ?, PostalCode = ?, Address = ?, PhoneNumber = ?,
       TransactionStatus = ?, LivelihoodProtectionFlag = ?, SpecialTransportCategory = ?,
       WheelchairFlag = ?, CareManager = ?, ContractDate = ?, Remarks = ?,
-      UpdatedAt = datetime('now','localtime')
+      UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
      WHERE UserId = ?`
   ).run(
     m.name,
@@ -166,6 +170,7 @@ export function updateUser(id: number, input: Partial<NewUser>): User {
     m.careManager,
     m.contractDate,
     m.remarks,
+    getCurrentOperator(),
     id
   )
 
@@ -177,8 +182,10 @@ export function updateUser(id: number, input: Partial<NewUser>): User {
 // 物理削除はしない（過去の依頼・実績から参照され続けるため論理削除に留める）
 export function softDeleteUser(id: number): void {
   getDb()
-    .prepare(`UPDATE M_User SET IsDeleted = 1, UpdatedAt = datetime('now','localtime') WHERE UserId = ?`)
-    .run(id)
+    .prepare(
+      `UPDATE M_User SET IsDeleted = 1, UpdatedAt = datetime('now','localtime'), UpdatedBy = ? WHERE UserId = ?`
+    )
+    .run(getCurrentOperator(), id)
 }
 
 interface CertificateRow {
@@ -244,13 +251,14 @@ export function addUserCertificate(
       input.userId
     )
 
+    const operator = getCurrentOperator()
     const result = db
       .prepare(
         `INSERT INTO T_UserInsuranceCertificate (
           UserId, CertificationType, InsurerName, InsurerNumber, InsuredNumber, CareLevel,
           CertificationDate, ValidFrom, ValidTo, CareSupportOffice, CareManager,
-          CommunityCareCenter, PlanRequestNotifiedDate, BenefitRate, IsCurrent
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`
+          CommunityCareCenter, PlanRequestNotifiedDate, BenefitRate, IsCurrent, CreatedBy, UpdatedBy
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`
       )
       .run(
         input.userId,
@@ -266,7 +274,9 @@ export function addUserCertificate(
         input.careManager ?? null,
         input.communityCareCenter ?? null,
         input.planRequestNotifiedDate ?? null,
-        input.benefitRate ?? null
+        input.benefitRate ?? null,
+        operator,
+        operator
       )
 
     db.prepare('COMMIT').run()

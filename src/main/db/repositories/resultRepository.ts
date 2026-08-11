@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type {
   NewResultDestination,
   NewTransportResultInput,
@@ -19,6 +20,7 @@ interface ResultRow {
   KokuhorenClaimFlag: number
   SnapshotCareLevel: string | null
   SnapshotBenefitRate: number | null
+  CancellationFeeAmount: number | null
   Remarks: string | null
   CreatedAt: string
   UpdatedAt: string
@@ -36,6 +38,10 @@ interface ResultDestinationRow {
   AdvancedExpense: number | null
   HospitalStaffName: string | null
   CalculatedFee: number | null
+  BaseCareFeeAmount: number | null
+  PhysicalCareFeeAmount: number | null
+  AncillaryServiceFeeAmount: number | null
+  SpecialFeeAmount: number | null
 }
 
 interface ResultLegRow {
@@ -61,6 +67,7 @@ function mapResultRow(row: ResultRow): TransportResult {
     kokuhorenClaimFlag: row.KokuhorenClaimFlag === 1,
     snapshotCareLevel: row.SnapshotCareLevel,
     snapshotBenefitRate: row.SnapshotBenefitRate,
+    cancellationFeeAmount: row.CancellationFeeAmount,
     remarks: row.Remarks,
     createdAt: row.CreatedAt,
     updatedAt: row.UpdatedAt
@@ -95,7 +102,11 @@ function mapDestinationRow(row: ResultDestinationRow): Omit<ResultDestinationDet
     inHospitalCareFlag: row.InHospitalCareFlag === 1,
     advancedExpense: row.AdvancedExpense,
     hospitalStaffName: row.HospitalStaffName,
-    calculatedFee: row.CalculatedFee
+    calculatedFee: row.CalculatedFee,
+    baseCareFeeAmount: row.BaseCareFeeAmount,
+    physicalCareFeeAmount: row.PhysicalCareFeeAmount,
+    ancillaryServiceFeeAmount: row.AncillaryServiceFeeAmount,
+    specialFeeAmount: row.SpecialFeeAmount
   }
 }
 
@@ -205,8 +216,8 @@ function insertDestinationsAndLegs(
   const db = getDb()
   const destStmt = db.prepare(
     `INSERT INTO T_ResultDestination
-      (ResultId, SeqNo, DestinationId, DepartmentId, TsuuinKaigoKihonFlag, PhysicalCareFlag, InHospitalCareFlag, AdvancedExpense, HospitalStaffName, CalculatedFee)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (ResultId, SeqNo, DestinationId, DepartmentId, TsuuinKaigoKihonFlag, PhysicalCareFlag, InHospitalCareFlag, AdvancedExpense, HospitalStaffName, CalculatedFee, BaseCareFeeAmount, PhysicalCareFeeAmount, AncillaryServiceFeeAmount, SpecialFeeAmount)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   const legStmt = db.prepare(
     `INSERT INTO T_ResultLeg
@@ -225,7 +236,11 @@ function insertDestinationsAndLegs(
       dest.inHospitalCareFlag ? 1 : 0,
       dest.advancedExpense ?? null,
       dest.hospitalStaffName ?? null,
-      dest.calculatedFee ?? null
+      dest.calculatedFee ?? null,
+      dest.baseCareFeeAmount ?? null,
+      dest.physicalCareFeeAmount ?? null,
+      dest.ancillaryServiceFeeAmount ?? null,
+      dest.specialFeeAmount ?? null
     )
     const resultDestinationId = Number(result.lastInsertRowid)
     for (const leg of dest.legs) {
@@ -264,18 +279,21 @@ export function createDraftForRequest(requestId: number): number | null {
 
   db.exec('BEGIN')
   try {
+    const operator = getCurrentOperator()
     const insertResult = db
       .prepare(
         `INSERT INTO T_TransportResult
-          (TransportDate, UserId, SourceRequestId, SnapshotCareLevel, SnapshotBenefitRate)
-         VALUES (?, ?, ?, ?, ?)`
+          (TransportDate, UserId, SourceRequestId, SnapshotCareLevel, SnapshotBenefitRate, CreatedBy, UpdatedBy)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         request.transportDate,
         request.userId,
         request.requestId,
         cert?.CareLevel ?? null,
-        cert?.BenefitRate ?? null
+        cert?.BenefitRate ?? null,
+        operator,
+        operator
       )
     const resultId = Number(insertResult.lastInsertRowid)
 
@@ -288,6 +306,10 @@ export function createDraftForRequest(requestId: number): number | null {
       advancedExpense: null,
       hospitalStaffName: null,
       calculatedFee: null,
+      baseCareFeeAmount: null,
+      physicalCareFeeAmount: null,
+      ancillaryServiceFeeAmount: null,
+      specialFeeAmount: null,
       legs: d.roundTripFlag
         ? [{ ...emptyLeg(1) }, { ...emptyLeg(2) }]
         : [{ ...emptyLeg(1) }]
@@ -353,14 +375,16 @@ export function updateResult(
   try {
     db.prepare(
       `UPDATE T_TransportResult SET
-        KokuhorenClaimFlag = ?, SnapshotCareLevel = ?, SnapshotBenefitRate = ?, Remarks = ?,
-        UpdatedAt = datetime('now','localtime')
+        KokuhorenClaimFlag = ?, SnapshotCareLevel = ?, SnapshotBenefitRate = ?, CancellationFeeAmount = ?, Remarks = ?,
+        UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
        WHERE ResultId = ?`
     ).run(
       input.result.kokuhorenClaimFlag ? 1 : 0,
       input.result.snapshotCareLevel ?? null,
       input.result.snapshotBenefitRate ?? null,
+      input.result.cancellationFeeAmount ?? null,
       input.result.remarks ?? null,
+      getCurrentOperator(),
       resultId
     )
 

@@ -57,7 +57,9 @@ const api: IpcApi = {
   },
 
   print: {
-    previewDailySchedule: (date) => ipcRenderer.invoke('print:previewDailySchedule', date)
+    previewDailySchedule: (date) => ipcRenderer.invoke('print:previewDailySchedule', date),
+    previewInvoice: (yearMonth, userId, adjustments) =>
+      ipcRenderer.invoke('print:previewInvoice', yearMonth, userId, adjustments)
   },
 
   servicePrices: {
@@ -77,6 +79,27 @@ const api: IpcApi = {
     update: (id, input) => ipcRenderer.invoke('specialTransportRates:update', id, input),
     remove: (id) => ipcRenderer.invoke('specialTransportRates:remove', id),
     findRate: (params) => ipcRenderer.invoke('specialTransportRates:findRate', params)
+  },
+
+  billing: {
+    getMonthlySummary: (yearMonth) => ipcRenderer.invoke('billing:getMonthlySummary', yearMonth),
+    getUserMonthlyDetail: (yearMonth, userId) =>
+      ipcRenderer.invoke('billing:getUserMonthlyDetail', yearMonth, userId)
+  },
+
+  operator: {
+    get: () => ipcRenderer.invoke('operator:get'),
+    set: (name) => ipcRenderer.invoke('operator:set', name)
+  },
+
+  backup: {
+    list: () => ipcRenderer.invoke('backup:list'),
+    restore: (fileName) => ipcRenderer.invoke('backup:restore', fileName)
+  },
+
+  csvImport: {
+    pickAndImportUsers: () => ipcRenderer.invoke('csvImport:pickAndImportUsers'),
+    pickAndImportCertificates: () => ipcRenderer.invoke('csvImport:pickAndImportCertificates')
   }
 }
 

@@ -1,7 +1,12 @@
 import type {
+  BackupFileInfo,
+  BillingDetailItem,
+  BillingSummaryItem,
   Department,
   Destination,
   Driver,
+  ImportResult,
+  InvoiceAdjustments,
   NewDepartment,
   NewDestination,
   NewDriver,
@@ -92,6 +97,11 @@ export interface IpcApi {
 
   print: {
     previewDailySchedule: (date: string) => Promise<string>
+    previewInvoice: (
+      yearMonth: string,
+      userId: number,
+      adjustments: InvoiceAdjustments
+    ) => Promise<string>
   }
 
   servicePrices: {
@@ -120,5 +130,25 @@ export interface IpcApi {
     update: (id: number, input: NewSpecialTransportRate) => Promise<SpecialTransportRate>
     remove: (id: number) => Promise<void>
     findRate: (params: { category: string; date: string }) => Promise<number | null>
+  }
+
+  billing: {
+    getMonthlySummary: (yearMonth: string) => Promise<BillingSummaryItem[]>
+    getUserMonthlyDetail: (yearMonth: string, userId: number) => Promise<BillingDetailItem[]>
+  }
+
+  operator: {
+    get: () => Promise<string | null>
+    set: (name: string | null) => Promise<void>
+  }
+
+  backup: {
+    list: () => Promise<BackupFileInfo[]>
+    restore: (fileName: string) => Promise<void>
+  }
+
+  csvImport: {
+    pickAndImportUsers: () => Promise<ImportResult | null>
+    pickAndImportCertificates: () => Promise<ImportResult | null>
   }
 }

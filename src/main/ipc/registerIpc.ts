@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { app, dialog, ipcMain } from 'electron'
 import {
   createDepartment,
   listDepartments,
@@ -44,6 +44,9 @@ import {
   updateResult
 } from '../db/repositories/resultRepository'
 import { generateDailySchedulePdf, openPdfPreview } from '../print/printSchedule'
+import { generateInvoicePdf } from '../print/printInvoice'
+import { listBackups, restoreFromBackup } from '../db/backup'
+import { importCertificatesFromCsv, importUsersFromCsv } from '../db/repositories/importRepository'
 import {
   createRevision,
   deleteRevision,
@@ -61,6 +64,8 @@ import {
   listRates,
   updateRate
 } from '../db/repositories/specialTransportRateRepository'
+import { getMonthlyBillingDetail, getMonthlyBillingSummary } from '../db/repositories/billingRepository'
+import { getCurrentOperator, setCurrentOperator } from '../operatorState'
 
 export function registerIpc(): void {
   ipcMain.handle('departments:list', (_e, opts) => listDepartments(opts))
@@ -110,6 +115,11 @@ export function registerIpc(): void {
     await openPdfPreview(pdfPath)
     return pdfPath
   })
+  ipcMain.handle('print:previewInvoice', async (_e, yearMonth, userId, adjustments) => {
+    const pdfPath = await generateInvoicePdf(yearMonth, userId, adjustments)
+    await openPdfPreview(pdfPath)
+    return pdfPath
+  })
 
   ipcMain.handle('servicePrices:list', (_e, opts) => listRevisions(opts))
   ipcMain.handle('servicePrices:get', (_e, id) => getRevisionDetail(id))
@@ -131,4 +141,41 @@ export function registerIpc(): void {
   ipcMain.handle('specialTransportRates:findRate', (_e, params) =>
     findRateForCategory(params.category, params.date)
   )
+
+  ipcMain.handle('billing:getMonthlySummary', (_e, yearMonth) =>
+    getMonthlyBillingSummary(yearMonth)
+  )
+  ipcMain.handle('billing:getUserMonthlyDetail', (_e, yearMonth, userId) =>
+    getMonthlyBillingDetail(yearMonth, userId)
+  )
+
+  ipcMain.handle('operator:get', () => getCurrentOperator())
+  ipcMain.handle('operator:set', (_e, name) => setCurrentOperator(name))
+
+  ipcMain.handle('backup:list', () => listBackups())
+  ipcMain.handle('backup:restore', (_e, fileName) => {
+    restoreFromBackup(fileName)
+    // ファイルを差し替えただけでは開いたままの状態と食い違うため、アプリを再起動して整合させる
+    app.relaunch()
+    app.exit(0)
+  })
+
+  ipcMain.handle('csvImport:pickAndImportUsers', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '利用者情報.csv を選択',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return importUsersFromCsv(result.filePaths[0])
+  })
+  ipcMain.handle('csvImport:pickAndImportCertificates', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '被保険者証情報.csv を選択',
+      filters: [{ name: 'CSV', extensions: ['csv'] }],
+      properties: ['openFile']
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return importCertificatesFromCsv(result.filePaths[0])
+  })
 }

@@ -26,3 +26,16 @@ export function getDbPath(): string {
 export function getBackupDir(): string {
   return BACKUP_DIR
 }
+
+export function getDataDir(): string {
+  return DB_DIR
+}
+
+// バックアップ復元でDBファイルを差し替える前に、開いている接続を閉じるために使う。
+// 呼び出し後に getDb() すると新しいファイルに対して再接続される。
+export function closeDb(): void {
+  if (db) {
+    db.close()
+    db = null
+  }
+}

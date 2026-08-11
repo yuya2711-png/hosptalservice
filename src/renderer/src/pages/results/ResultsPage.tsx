@@ -184,6 +184,10 @@ interface ResultDestForm {
   advancedExpense: string
   hospitalStaffName: string
   calculatedFee: string
+  baseCareFeeAmount: string
+  physicalCareFeeAmount: string
+  ancillaryServiceFeeAmount: string
+  specialFeeAmount: string
   legs: LegForm[]
 }
 
@@ -216,6 +220,7 @@ interface ResultFormState {
   kokuhorenClaimFlag: boolean
   snapshotCareLevel: string
   snapshotBenefitRate: string
+  cancellationFeeAmount: string
   remarks: string
   destinations: ResultDestForm[]
 }
@@ -226,6 +231,8 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
     snapshotCareLevel: detail.result.snapshotCareLevel ?? '',
     snapshotBenefitRate:
       detail.result.snapshotBenefitRate !== null ? String(detail.result.snapshotBenefitRate) : '',
+    cancellationFeeAmount:
+      detail.result.cancellationFeeAmount !== null ? String(detail.result.cancellationFeeAmount) : '',
     remarks: detail.result.remarks ?? '',
     destinations: detail.destinations.map((d) => ({
       destinationId: d.destinationId,
@@ -236,6 +243,11 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
       advancedExpense: d.advancedExpense !== null ? String(d.advancedExpense) : '',
       hospitalStaffName: d.hospitalStaffName ?? '',
       calculatedFee: d.calculatedFee !== null ? String(d.calculatedFee) : '',
+      baseCareFeeAmount: d.baseCareFeeAmount !== null ? String(d.baseCareFeeAmount) : '',
+      physicalCareFeeAmount: d.physicalCareFeeAmount !== null ? String(d.physicalCareFeeAmount) : '',
+      ancillaryServiceFeeAmount:
+        d.ancillaryServiceFeeAmount !== null ? String(d.ancillaryServiceFeeAmount) : '',
+      specialFeeAmount: d.specialFeeAmount !== null ? String(d.specialFeeAmount) : '',
       legs: [...d.legs]
         .sort((a, b) => a.legType - b.legType)
         .map((leg) => ({
@@ -351,7 +363,7 @@ function ResultDetailForm(props: {
       )
       return
     }
-    updateDest(index, { calculatedFee: String(fee) })
+    updateDest(index, { specialFeeAmount: String(fee) })
   }
 
   function toggleReturnLeg(destIndex: number, enabled: boolean): void {
@@ -383,6 +395,11 @@ function ResultDetailForm(props: {
         advancedExpense: d.advancedExpense !== '' ? Number(d.advancedExpense) : null,
         hospitalStaffName: d.hospitalStaffName || null,
         calculatedFee: d.calculatedFee !== '' ? Number(d.calculatedFee) : null,
+        baseCareFeeAmount: d.baseCareFeeAmount !== '' ? Number(d.baseCareFeeAmount) : null,
+        physicalCareFeeAmount: d.physicalCareFeeAmount !== '' ? Number(d.physicalCareFeeAmount) : null,
+        ancillaryServiceFeeAmount:
+          d.ancillaryServiceFeeAmount !== '' ? Number(d.ancillaryServiceFeeAmount) : null,
+        specialFeeAmount: d.specialFeeAmount !== '' ? Number(d.specialFeeAmount) : null,
         legs: d.legs.map((leg, li) => ({
           legType: li === 0 ? 1 : 2,
           departureLocation: leg.departureLocation || null,
@@ -406,6 +423,8 @@ function ResultDetailForm(props: {
         kokuhorenClaimFlag: form.kokuhorenClaimFlag,
         snapshotCareLevel: form.snapshotCareLevel || null,
         snapshotBenefitRate: form.snapshotBenefitRate !== '' ? Number(form.snapshotBenefitRate) : null,
+        cancellationFeeAmount:
+          form.cancellationFeeAmount !== '' ? Number(form.cancellationFeeAmount) : null,
         remarks: form.remarks || null
       },
       destinations
@@ -458,6 +477,15 @@ function ResultDetailForm(props: {
               step="0.01"
               value={form.snapshotBenefitRate}
               onChange={(e) => update('snapshotBenefitRate', e.target.value)}
+              style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: 'block', marginBottom: 2 }}>キャンセル料金</label>
+            <input
+              type="number"
+              value={form.cancellationFeeAmount}
+              onChange={(e) => update('cancellationFeeAmount', e.target.value)}
               style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
             />
           </div>
@@ -590,7 +618,7 @@ function ResultDetailForm(props: {
           <div style={{ border: '1px solid #ddd', padding: 8, background: '#fafafa' }}>
             <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
               <div style={{ flex: 1 }}>
-                <label style={{ display: 'block', marginBottom: 2 }}>料金(円)</label>
+                <label style={{ display: 'block', marginBottom: 2 }}>運送サービス料金(円)</label>
                 <input
                   type="number"
                   value={dest.calculatedFee}
@@ -601,14 +629,57 @@ function ResultDetailForm(props: {
               <button type="button" onClick={() => calculateFee(di)}>
                 移動時間から計算
               </button>
+            </div>
+            <p style={{ fontSize: 11, color: '#888', margin: '4px 0 8px' }}>
+              往路(＋復路)の所要時間からサービス単価マスタを参照して計算します。算出後の金額は手動で修正できます。
+            </p>
+
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: 2 }}>介護基本料(円)</label>
+                <input
+                  type="number"
+                  value={dest.baseCareFeeAmount}
+                  onChange={(e) => updateDest(di, { baseCareFeeAmount: e.target.value })}
+                  style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: 2 }}>身体介助(円)</label>
+                <input
+                  type="number"
+                  value={dest.physicalCareFeeAmount}
+                  onChange={(e) => updateDest(di, { physicalCareFeeAmount: e.target.value })}
+                  style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: 2 }}>付帯サービス(円)</label>
+                <input
+                  type="number"
+                  value={dest.ancillaryServiceFeeAmount}
+                  onChange={(e) => updateDest(di, { ancillaryServiceFeeAmount: e.target.value })}
+                  style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: 2 }}>特別自費(円)</label>
+                <input
+                  type="number"
+                  value={dest.specialFeeAmount}
+                  onChange={(e) => updateDest(di, { specialFeeAmount: e.target.value })}
+                  style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+                />
+              </div>
               <button type="button" onClick={() => calculateSpecialFee(di)}>
                 特別搬送区分から計算
               </button>
             </div>
             <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
-              「移動時間から計算」は往路(＋復路)の所要時間からサービス単価マスタを参照します。
-              「特別搬送区分から計算」は利用者マスタの特別搬送区分から特別搬送料金マスタを参照します。
-              算出後の金額はどちらも手動で修正できます。
+              「特別搬送区分から計算」は利用者マスタの特別搬送区分から特別搬送料金マスタを参照し、特別自費欄に入力します。
+              介護基本料・身体介助・付帯サービスは金額を直接入力してください。
             </p>
           </div>
         </fieldset>

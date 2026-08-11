@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type {
   NewRequestDestination,
   NewTransportRequestInput,
@@ -185,13 +186,14 @@ function insertRequestHeader(
   isRecurring: boolean
 ): number {
   const db = getDb()
+  const operator = getCurrentOperator()
   const result = db
     .prepare(
       `INSERT INTO T_TransportRequest (
         ReceivedDate, IsRecurring, UserId, RequestedBy, TransportDate, PickupTime, ReturnPickupTime,
         SuitableVehicle, ServiceTicketFlag, CompanionName, WheelchairFlag,
-        SpecialTransportFlag, CancelDate, CancelReason, PaidFlag, Remarks
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        SpecialTransportFlag, CancelDate, CancelReason, PaidFlag, Remarks, CreatedBy, UpdatedBy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.receivedDate,
@@ -209,7 +211,9 @@ function insertRequestHeader(
       input.cancelDate ?? null,
       input.cancelReason ?? null,
       input.paidFlag ? 1 : 0,
-      input.remarks ?? null
+      input.remarks ?? null,
+      operator,
+      operator
     )
   return Number(result.lastInsertRowid)
 }
@@ -245,7 +249,7 @@ export function updateRequest(
         ReceivedDate = ?, UserId = ?, RequestedBy = ?, TransportDate = ?, PickupTime = ?, ReturnPickupTime = ?,
         SuitableVehicle = ?, ServiceTicketFlag = ?, CompanionName = ?, WheelchairFlag = ?,
         SpecialTransportFlag = ?, CancelDate = ?, CancelReason = ?, PaidFlag = ?, Remarks = ?,
-        UpdatedAt = datetime('now','localtime')
+        UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
        WHERE RequestId = ?`
     ).run(
       input.request.receivedDate,
@@ -263,6 +267,7 @@ export function updateRequest(
       input.request.cancelReason ?? null,
       input.request.paidFlag ? 1 : 0,
       input.request.remarks ?? null,
+      getCurrentOperator(),
       id
     )
 

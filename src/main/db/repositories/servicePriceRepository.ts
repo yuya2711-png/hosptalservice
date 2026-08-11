@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type {
   NewServicePriceRevisionInput,
   NewServicePriceTier,
@@ -96,10 +97,11 @@ export function createRevision(input: NewServicePriceRevisionInput): ServicePric
   const db = getDb()
   db.exec('BEGIN')
   try {
+    const operator = getCurrentOperator()
     const result = db
       .prepare(
-        `INSERT INTO M_ServicePriceRevision (Category, EffectiveFrom, BaseFee, UnitPrice, IntervalMinutes, Remarks)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        `INSERT INTO M_ServicePriceRevision (Category, EffectiveFrom, BaseFee, UnitPrice, IntervalMinutes, Remarks, CreatedBy, UpdatedBy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         input.revision.category,
@@ -107,7 +109,9 @@ export function createRevision(input: NewServicePriceRevisionInput): ServicePric
         input.revision.baseFee,
         input.revision.unitPrice,
         input.revision.intervalMinutes,
-        input.revision.remarks ?? null
+        input.revision.remarks ?? null,
+        operator,
+        operator
       )
     const revisionId = Number(result.lastInsertRowid)
     insertTiers(db, revisionId, input.tiers)
@@ -134,7 +138,7 @@ export function updateRevision(
     db.prepare(
       `UPDATE M_ServicePriceRevision SET
         Category = ?, EffectiveFrom = ?, BaseFee = ?, UnitPrice = ?, IntervalMinutes = ?, Remarks = ?,
-        UpdatedAt = datetime('now','localtime')
+        UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
        WHERE RevisionId = ?`
     ).run(
       input.revision.category,
@@ -143,6 +147,7 @@ export function updateRevision(
       input.revision.unitPrice,
       input.revision.intervalMinutes,
       input.revision.remarks ?? null,
+      getCurrentOperator(),
       revisionId
     )
 

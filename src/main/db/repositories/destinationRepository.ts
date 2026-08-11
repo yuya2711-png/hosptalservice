@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type { Destination, NewDestination } from '../../../shared/types/entities'
 
 interface DestinationRow {
@@ -52,10 +53,11 @@ export function listDestinations(opts?: {
 
 export function createDestination(input: NewDestination): Destination {
   const db = getDb()
+  const operator = getCurrentOperator()
   const result = db
     .prepare(
-      `INSERT INTO M_Destination (Name, NameKana, PostalCode, Address, PhoneNumber, Remarks)
-       VALUES (?, ?, ?, ?, ?, ?)`
+      `INSERT INTO M_Destination (Name, NameKana, PostalCode, Address, PhoneNumber, Remarks, CreatedBy, UpdatedBy)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.name,
@@ -63,7 +65,9 @@ export function createDestination(input: NewDestination): Destination {
       input.postalCode ?? null,
       input.address ?? null,
       input.phoneNumber ?? null,
-      input.remarks ?? null
+      input.remarks ?? null,
+      operator,
+      operator
     )
   const row = db
     .prepare('SELECT * FROM M_Destination WHERE DestinationId = ?')
@@ -90,7 +94,7 @@ export function updateDestination(id: number, input: Partial<NewDestination>): D
   db.prepare(
     `UPDATE M_Destination
      SET Name = ?, NameKana = ?, PostalCode = ?, Address = ?, PhoneNumber = ?, Remarks = ?,
-         UpdatedAt = datetime('now','localtime')
+         UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
      WHERE DestinationId = ?`
   ).run(
     merged.name,
@@ -99,6 +103,7 @@ export function updateDestination(id: number, input: Partial<NewDestination>): D
     merged.address,
     merged.phoneNumber,
     merged.remarks,
+    getCurrentOperator(),
     id
   )
 
@@ -111,7 +116,7 @@ export function updateDestination(id: number, input: Partial<NewDestination>): D
 export function setDestinationActive(id: number, isActive: boolean): void {
   getDb()
     .prepare(
-      `UPDATE M_Destination SET IsActive = ?, UpdatedAt = datetime('now','localtime') WHERE DestinationId = ?`
+      `UPDATE M_Destination SET IsActive = ?, UpdatedAt = datetime('now','localtime'), UpdatedBy = ? WHERE DestinationId = ?`
     )
-    .run(isActive ? 1 : 0, id)
+    .run(isActive ? 1 : 0, getCurrentOperator(), id)
 }

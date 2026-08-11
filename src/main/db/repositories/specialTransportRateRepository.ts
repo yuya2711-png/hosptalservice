@@ -1,4 +1,5 @@
 import { getDb } from '../connection'
+import { getCurrentOperator } from '../../operatorState'
 import type { NewSpecialTransportRate, SpecialTransportRate } from '../../../shared/types/entities'
 
 interface RateRow {
@@ -39,12 +40,13 @@ export function getRate(rateId: number): SpecialTransportRate | null {
 
 export function createRate(input: NewSpecialTransportRate): SpecialTransportRate {
   const db = getDb()
+  const operator = getCurrentOperator()
   const result = db
     .prepare(
-      `INSERT INTO M_SpecialTransportRate (Category, EffectiveFrom, Amount, Remarks)
-       VALUES (?, ?, ?, ?)`
+      `INSERT INTO M_SpecialTransportRate (Category, EffectiveFrom, Amount, Remarks, CreatedBy, UpdatedBy)
+       VALUES (?, ?, ?, ?, ?, ?)`
     )
-    .run(input.category, input.effectiveFrom, input.amount, input.remarks ?? null)
+    .run(input.category, input.effectiveFrom, input.amount, input.remarks ?? null, operator, operator)
   return getRate(Number(result.lastInsertRowid)) as SpecialTransportRate
 }
 
@@ -55,9 +57,16 @@ export function updateRate(rateId: number, input: NewSpecialTransportRate): Spec
 
   db.prepare(
     `UPDATE M_SpecialTransportRate SET
-      Category = ?, EffectiveFrom = ?, Amount = ?, Remarks = ?, UpdatedAt = datetime('now','localtime')
+      Category = ?, EffectiveFrom = ?, Amount = ?, Remarks = ?, UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
      WHERE RateId = ?`
-  ).run(input.category, input.effectiveFrom, input.amount, input.remarks ?? null, rateId)
+  ).run(
+    input.category,
+    input.effectiveFrom,
+    input.amount,
+    input.remarks ?? null,
+    getCurrentOperator(),
+    rateId
+  )
 
   return getRate(rateId) as SpecialTransportRate
 }
