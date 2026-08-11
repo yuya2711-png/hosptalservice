@@ -177,6 +177,7 @@ export function listRequestResultStatus(date: string): RequestResultStatusItem[]
         requestedBy: row.RequestedBy as string | null,
         transportDate: row.TransportDate as string,
         pickupTime: row.PickupTime as string | null,
+        returnPickupTime: row.ReturnPickupTime as string | null,
         suitableVehicle: row.SuitableVehicle as string | null,
         serviceTicketFlag: row.ServiceTicketFlag === 1,
         companionName: row.CompanionName as string | null,

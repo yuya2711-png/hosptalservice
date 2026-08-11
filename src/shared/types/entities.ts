@@ -85,6 +85,7 @@ export interface TransportRequest {
   requestedBy: string | null
   transportDate: string
   pickupTime: string | null
+  returnPickupTime: string | null
   suitableVehicle: string | null
   serviceTicketFlag: boolean
   companionName: string | null
@@ -132,6 +133,7 @@ export type NewTransportRequest = Pick<
   | 'requestedBy'
   | 'transportDate'
   | 'pickupTime'
+  | 'returnPickupTime'
   | 'suitableVehicle'
   | 'serviceTicketFlag'
   | 'companionName'
@@ -148,12 +150,19 @@ export interface NewTransportRequestInput {
   destinations: NewRequestDestination[]
 }
 
-// 定期搬送: 曜日パターン(0=日〜6=土)＋期間を指定し、main側で個別の搬送依頼へ展開する
+// 定期搬送: 曜日(0=日〜6=土)ごとに往路・復路の予定時刻を指定できる
+export interface RecurringDayPattern {
+  weekday: number
+  pickupTime: string | null
+  returnPickupTime: string | null
+}
+
+// 定期搬送: 曜日別パターン＋期間を指定し、main側で個別の搬送依頼へ展開する
 export interface RecurringRequestInput {
-  request: Omit<NewTransportRequest, 'transportDate' | 'receivedDate'>
+  request: Omit<NewTransportRequest, 'transportDate' | 'receivedDate' | 'pickupTime' | 'returnPickupTime'>
   destinations: NewRequestDestination[]
   receivedDate: string
-  weekdays: number[]
+  dayPatterns: RecurringDayPattern[]
   startDate: string
   endDate: string
 }
@@ -292,6 +301,22 @@ export interface NewServicePriceRevisionInput {
   revision: NewServicePriceRevision
   tiers: NewServicePriceTier[]
 }
+
+// 特別搬送の料金(利用者ごとの「特別搬送区分」に応じた固定額)。適用開始日で改定履歴を保持する。
+export interface SpecialTransportRate {
+  rateId: number
+  category: string
+  effectiveFrom: string
+  amount: number
+  remarks: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export type NewSpecialTransportRate = Pick<
+  SpecialTransportRate,
+  'category' | 'effectiveFrom' | 'amount' | 'remarks'
+>
 
 // 新規作成時に入力するフィールドのみを抜き出すユーティリティ型
 export type NewDepartment = Pick<Department, 'name' | 'sortOrder'>

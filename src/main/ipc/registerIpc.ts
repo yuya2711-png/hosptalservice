@@ -29,6 +29,7 @@ import {
 import {
   createRecurringRequests,
   createRequest,
+  deleteRecurringGroup,
   deleteRequest,
   getRequestDetail,
   listRequests,
@@ -52,6 +53,14 @@ import {
   listRevisions,
   updateRevision
 } from '../db/repositories/servicePriceRepository'
+import {
+  createRate,
+  deleteRate,
+  findRateForCategory,
+  getRate,
+  listRates,
+  updateRate
+} from '../db/repositories/specialTransportRateRepository'
 
 export function registerIpc(): void {
   ipcMain.handle('departments:list', (_e, opts) => listDepartments(opts))
@@ -85,6 +94,7 @@ export function registerIpc(): void {
   ipcMain.handle('requests:update', (_e, id, input) => updateRequest(id, input))
   ipcMain.handle('requests:remove', (_e, id) => deleteRequest(id))
   ipcMain.handle('requests:createRecurring', (_e, input) => createRecurringRequests(input))
+  ipcMain.handle('requests:deleteRecurringGroup', (_e, groupId) => deleteRecurringGroup(groupId))
 
   ipcMain.handle('results:listStatusForDate', (_e, date) => listRequestResultStatus(date))
   ipcMain.handle('results:get', (_e, id) => getResultDetail(id))
@@ -111,5 +121,14 @@ export function registerIpc(): void {
   )
   ipcMain.handle('servicePrices:findFee', (_e, params) =>
     findFeeForMinutes(params.category, params.date, params.minutes)
+  )
+
+  ipcMain.handle('specialTransportRates:list', () => listRates())
+  ipcMain.handle('specialTransportRates:get', (_e, id) => getRate(id))
+  ipcMain.handle('specialTransportRates:create', (_e, input) => createRate(input))
+  ipcMain.handle('specialTransportRates:update', (_e, id, input) => updateRate(id, input))
+  ipcMain.handle('specialTransportRates:remove', (_e, id) => deleteRate(id))
+  ipcMain.handle('specialTransportRates:findRate', (_e, params) =>
+    findRateForCategory(params.category, params.date)
   )
 }

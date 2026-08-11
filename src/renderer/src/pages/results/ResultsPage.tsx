@@ -263,6 +263,7 @@ function ResultDetailForm(props: {
   const { resultId, departments, destinationsMaster, driversMaster, onSaved, onDeleted } = props
   const [form, setForm] = useState<ResultFormState | null>(null)
   const [transportDate, setTransportDate] = useState('')
+  const [userId, setUserId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
@@ -270,6 +271,7 @@ function ResultDetailForm(props: {
       if (detail) {
         setForm(detailToForm(detail))
         setTransportDate(detail.result.transportDate)
+        setUserId(detail.result.userId)
       }
     })
   }, [resultId])
@@ -325,6 +327,27 @@ function ResultDetailForm(props: {
     if (fee === null) {
       window.alert(
         '該当するサービス単価が見つかりませんでした。サービス単価マスタを確認するか、手動で金額を入力してください。'
+      )
+      return
+    }
+    updateDest(index, { calculatedFee: String(fee) })
+  }
+
+  async function calculateSpecialFee(index: number): Promise<void> {
+    if (userId === null) return
+    const user = await window.api.users.get(userId)
+    const category = user?.specialTransportCategory
+    if (!category) {
+      window.alert('この利用者には特別搬送区分が設定されていません。利用者マスタで設定してください。')
+      return
+    }
+    const fee = await window.api.specialTransportRates.findRate({
+      category,
+      date: transportDate
+    })
+    if (fee === null) {
+      window.alert(
+        `区分「${category}」に該当する特別搬送料金が見つかりませんでした。特別搬送料金マスタを確認してください。`
       )
       return
     }
@@ -578,9 +601,14 @@ function ResultDetailForm(props: {
               <button type="button" onClick={() => calculateFee(di)}>
                 移動時間から計算
               </button>
+              <button type="button" onClick={() => calculateSpecialFee(di)}>
+                特別搬送区分から計算
+              </button>
             </div>
             <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
-              往路(＋復路)の所要時間からサービス単価マスタを参照して算出します。算出後の金額は手動で修正できます。
+              「移動時間から計算」は往路(＋復路)の所要時間からサービス単価マスタを参照します。
+              「特別搬送区分から計算」は利用者マスタの特別搬送区分から特別搬送料金マスタを参照します。
+              算出後の金額はどちらも手動で修正できます。
             </p>
           </div>
         </fieldset>

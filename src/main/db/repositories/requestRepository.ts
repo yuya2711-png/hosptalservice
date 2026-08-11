@@ -20,6 +20,7 @@ interface RequestRow {
   RequestedBy: string | null
   TransportDate: string
   PickupTime: string | null
+  ReturnPickupTime: string | null
   SuitableVehicle: string | null
   ServiceTicketFlag: number
   CompanionName: string | null
@@ -54,6 +55,7 @@ function mapRequestRow(row: RequestRow): TransportRequest {
     requestedBy: row.RequestedBy,
     transportDate: row.TransportDate,
     pickupTime: row.PickupTime,
+    returnPickupTime: row.ReturnPickupTime,
     suitableVehicle: row.SuitableVehicle,
     serviceTicketFlag: row.ServiceTicketFlag === 1,
     companionName: row.CompanionName,
@@ -186,10 +188,10 @@ function insertRequestHeader(
   const result = db
     .prepare(
       `INSERT INTO T_TransportRequest (
-        ReceivedDate, IsRecurring, UserId, RequestedBy, TransportDate, PickupTime,
+        ReceivedDate, IsRecurring, UserId, RequestedBy, TransportDate, PickupTime, ReturnPickupTime,
         SuitableVehicle, ServiceTicketFlag, CompanionName, WheelchairFlag,
         SpecialTransportFlag, CancelDate, CancelReason, PaidFlag, Remarks
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.receivedDate,
@@ -198,6 +200,7 @@ function insertRequestHeader(
       input.requestedBy ?? null,
       input.transportDate,
       input.pickupTime ?? null,
+      input.returnPickupTime ?? null,
       input.suitableVehicle ?? null,
       input.serviceTicketFlag ? 1 : 0,
       input.companionName ?? null,
@@ -239,7 +242,7 @@ export function updateRequest(
   try {
     db.prepare(
       `UPDATE T_TransportRequest SET
-        ReceivedDate = ?, UserId = ?, RequestedBy = ?, TransportDate = ?, PickupTime = ?,
+        ReceivedDate = ?, UserId = ?, RequestedBy = ?, TransportDate = ?, PickupTime = ?, ReturnPickupTime = ?,
         SuitableVehicle = ?, ServiceTicketFlag = ?, CompanionName = ?, WheelchairFlag = ?,
         SpecialTransportFlag = ?, CancelDate = ?, CancelReason = ?, PaidFlag = ?, Remarks = ?,
         UpdatedAt = datetime('now','localtime')
@@ -250,6 +253,7 @@ export function updateRequest(
       input.request.requestedBy ?? null,
       input.request.transportDate,
       input.request.pickupTime ?? null,
+      input.request.returnPickupTime ?? null,
       input.request.suitableVehicle ?? null,
       input.request.serviceTicketFlag ? 1 : 0,
       input.request.companionName ?? null,
@@ -277,36 +281,51 @@ export function deleteRequest(id: number): void {
   getDb().prepare('DELETE FROM T_TransportRequest WHERE RequestId = ?').run(id)
 }
 
-// 曜日パターン(0=日〜6=土)＋期間から該当日を列挙し、共有のRecurringGroupIdを持つ
-// 個別の搬送依頼として展開する（冪等ではなく、呼び出すたびに新規グループを作る）
+// 曜日別パターン(0=日〜6=土、それぞれ往路/復路の予定時刻を持つ)＋期間から該当日を列挙し、
+// 共有のRecurringGroupIdを持つ個別の搬送依頼として展開する
+// （冪等ではなく、呼び出すたびに新規グループを作る）
 export function createRecurringRequests(input: RecurringRequestInput): TransportRequestDetail[] {
-  if (input.weekdays.length === 0) throw new Error('曜日を1つ以上選択してください')
+  if (input.dayPatterns.length === 0) throw new Error('曜日を1つ以上選択してください')
   const start = new Date(`${input.startDate}T00:00:00`)
   const end = new Date(`${input.endDate}T00:00:00`)
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || start > end) {
     throw new Error('定期搬送の期間が不正です')
   }
 
-  const dates: string[] = []
+  const patternByWeekday = new Map(input.dayPatterns.map((p) => [p.weekday, p]))
+
+  const occurrences: { transportDate: string; pickupTime: string | null; returnPickupTime: string | null }[] =
+    []
   const cursor = new Date(start)
   while (cursor <= end) {
-    if (input.weekdays.includes(cursor.getDay())) {
+    const pattern = patternByWeekday.get(cursor.getDay())
+    if (pattern) {
       const y = cursor.getFullYear()
       const m = String(cursor.getMonth() + 1).padStart(2, '0')
       const d = String(cursor.getDate()).padStart(2, '0')
-      dates.push(`${y}-${m}-${d}`)
+      occurrences.push({
+        transportDate: `${y}-${m}-${d}`,
+        pickupTime: pattern.pickupTime,
+        returnPickupTime: pattern.returnPickupTime
+      })
     }
     cursor.setDate(cursor.getDate() + 1)
   }
-  if (dates.length === 0) throw new Error('指定した期間・曜日に該当する日がありません')
+  if (occurrences.length === 0) throw new Error('指定した期間・曜日に該当する日がありません')
 
   const db = getDb()
   db.exec('BEGIN')
   try {
     const requestIds: number[] = []
-    for (const transportDate of dates) {
+    for (const occurrence of occurrences) {
       const requestId = insertRequestHeader(
-        { ...input.request, receivedDate: input.receivedDate, transportDate },
+        {
+          ...input.request,
+          receivedDate: input.receivedDate,
+          transportDate: occurrence.transportDate,
+          pickupTime: occurrence.pickupTime,
+          returnPickupTime: occurrence.returnPickupTime
+        },
         true
       )
       insertDestinations(requestId, input.destinations)
@@ -325,4 +344,28 @@ export function createRecurringRequests(input: RecurringRequestInput): Transport
     db.exec('ROLLBACK')
     throw err
   }
+}
+
+// 定期搬送グループに属する依頼をまとめて削除する。既に実績が入力されている日は
+// (T_TransportResult.SourceRequestIdの外部キー制約により)削除できないためスキップする。
+export function deleteRecurringGroup(groupId: number): { deleted: number; skipped: number } {
+  const db = getDb()
+  const rows = db
+    .prepare('SELECT RequestId FROM T_TransportRequest WHERE RecurringGroupId = ?')
+    .all(groupId) as unknown as { RequestId: number }[]
+
+  let deleted = 0
+  let skipped = 0
+  for (const { RequestId } of rows) {
+    const hasResult = db
+      .prepare('SELECT 1 FROM T_TransportResult WHERE SourceRequestId = ? LIMIT 1')
+      .get(RequestId)
+    if (hasResult) {
+      skipped++
+      continue
+    }
+    db.prepare('DELETE FROM T_TransportRequest WHERE RequestId = ?').run(RequestId)
+    deleted++
+  }
+  return { deleted, skipped }
 }

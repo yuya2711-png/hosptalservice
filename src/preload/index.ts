@@ -41,7 +41,9 @@ const api: IpcApi = {
     create: (input) => ipcRenderer.invoke('requests:create', input),
     update: (id, input) => ipcRenderer.invoke('requests:update', id, input),
     remove: (id) => ipcRenderer.invoke('requests:remove', id),
-    createRecurring: (input) => ipcRenderer.invoke('requests:createRecurring', input)
+    createRecurring: (input) => ipcRenderer.invoke('requests:createRecurring', input),
+    deleteRecurringGroup: (groupId) =>
+      ipcRenderer.invoke('requests:deleteRecurringGroup', groupId)
   },
 
   results: {
@@ -66,6 +68,15 @@ const api: IpcApi = {
     remove: (id) => ipcRenderer.invoke('servicePrices:remove', id),
     generateTiers: (params) => ipcRenderer.invoke('servicePrices:generateTiers', params),
     findFee: (params) => ipcRenderer.invoke('servicePrices:findFee', params)
+  },
+
+  specialTransportRates: {
+    list: () => ipcRenderer.invoke('specialTransportRates:list'),
+    get: (id) => ipcRenderer.invoke('specialTransportRates:get', id),
+    create: (input) => ipcRenderer.invoke('specialTransportRates:create', input),
+    update: (id, input) => ipcRenderer.invoke('specialTransportRates:update', id, input),
+    remove: (id) => ipcRenderer.invoke('specialTransportRates:remove', id),
+    findRate: (params) => ipcRenderer.invoke('specialTransportRates:findRate', params)
   }
 }
 

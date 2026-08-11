@@ -6,6 +6,7 @@ import type {
   NewDestination,
   NewDriver,
   NewServicePriceRevisionInput,
+  NewSpecialTransportRate,
   NewTransportRequestInput,
   NewTransportResultInput,
   NewUser,
@@ -14,6 +15,7 @@ import type {
   RequestResultStatusItem,
   ServicePriceRevision,
   ServicePriceRevisionDetail,
+  SpecialTransportRate,
   TransportRequestDetail,
   TransportRequestListItem,
   TransportResultDetail,
@@ -76,6 +78,7 @@ export interface IpcApi {
     update: (id: number, input: NewTransportRequestInput) => Promise<TransportRequestDetail>
     remove: (id: number) => Promise<void>
     createRecurring: (input: RecurringRequestInput) => Promise<TransportRequestDetail[]>
+    deleteRecurringGroup: (groupId: number) => Promise<{ deleted: number; skipped: number }>
   }
 
   results: {
@@ -108,5 +111,14 @@ export interface IpcApi {
       date: string
       minutes: number
     }) => Promise<number | null>
+  }
+
+  specialTransportRates: {
+    list: () => Promise<SpecialTransportRate[]>
+    get: (id: number) => Promise<SpecialTransportRate | null>
+    create: (input: NewSpecialTransportRate) => Promise<SpecialTransportRate>
+    update: (id: number, input: NewSpecialTransportRate) => Promise<SpecialTransportRate>
+    remove: (id: number) => Promise<void>
+    findRate: (params: { category: string; date: string }) => Promise<number | null>
   }
 }

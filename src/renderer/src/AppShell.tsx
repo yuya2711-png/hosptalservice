@@ -4,6 +4,7 @@ import { DestinationsPage } from '@renderer/pages/masters/DestinationsPage'
 import { DriversPage } from '@renderer/pages/masters/DriversPage'
 import { UsersPage } from '@renderer/pages/masters/UsersPage'
 import { ServicePricesPage } from '@renderer/pages/masters/ServicePricesPage'
+import { SpecialTransportRatesPage } from '@renderer/pages/masters/SpecialTransportRatesPage'
 import { RequestsPage, type OpenRequestRequest } from '@renderer/pages/requests/RequestsPage'
 import { CalendarPage } from '@renderer/pages/calendar/CalendarPage'
 import { ResultsPage } from '@renderer/pages/results/ResultsPage'
@@ -16,6 +17,7 @@ type NavKey =
   | 'masters-drivers'
   | 'masters-departments'
   | 'masters-service-prices'
+  | 'masters-special-transport-rates'
   | 'requests'
   | 'calendar'
   | 'results'
@@ -30,6 +32,12 @@ const NAV_ITEMS: { key: NavKey; label: string; group: string; implemented: boole
   {
     key: 'masters-service-prices',
     label: 'サービス単価',
+    group: 'マスタ管理',
+    implemented: true
+  },
+  {
+    key: 'masters-special-transport-rates',
+    label: '特別搬送料金',
     group: 'マスタ管理',
     implemented: true
   },
@@ -98,6 +106,7 @@ export function AppShell(): ReactElement {
         {active === 'masters-drivers' && <DriversPage />}
         {active === 'masters-departments' && <DepartmentsPage />}
         {active === 'masters-service-prices' && <ServicePricesPage />}
+        {active === 'masters-special-transport-rates' && <SpecialTransportRatesPage />}
         {active === 'requests' && <RequestsPage openRequest={openRequest} />}
         {active === 'calendar' && <CalendarPage onOpenRequest={openRequestInRequestsPage} />}
         {active === 'results' && <ResultsPage />}

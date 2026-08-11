@@ -4,6 +4,7 @@ import type {
   Destination,
   NewRequestDestination,
   NewTransportRequestInput,
+  RecurringDayPattern,
   RecurringRequestInput,
   TransportRequestDetail,
   TransportRequestListItem,
@@ -11,6 +12,19 @@ import type {
 } from '@shared/types/entities'
 
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+interface DayPatternForm {
+  enabled: boolean
+  pickupTime: string
+  returnPickupTime: string
+}
+
+function emptyDayPatterns(): DayPatternForm[] {
+  return WEEKDAY_LABELS.map(() => ({ enabled: false, pickupTime: '', returnPickupTime: '' }))
+}
+
+const cellHeaderStyle = { textAlign: 'left' as const, borderBottom: '1px solid #ccc', padding: 6 }
+const cellStyle = { borderBottom: '1px solid #eee', padding: 6 }
 
 function todayStr(): string {
   const d = new Date()
@@ -183,6 +197,7 @@ interface RequestFormState {
   requestedBy: string
   transportDate: string
   pickupTime: string
+  returnPickupTime: string
   suitableVehicle: string
   serviceTicketFlag: boolean
   companionName: string
@@ -202,6 +217,7 @@ function emptyForm(defaultTransportDate?: string): RequestFormState {
     requestedBy: '',
     transportDate: defaultTransportDate ?? '',
     pickupTime: '',
+    returnPickupTime: '',
     suitableVehicle: '',
     serviceTicketFlag: false,
     companionName: '',
@@ -223,6 +239,7 @@ function detailToForm(detail: TransportRequestDetail): RequestFormState {
     requestedBy: request.requestedBy ?? '',
     transportDate: request.transportDate,
     pickupTime: request.pickupTime ?? '',
+    returnPickupTime: request.returnPickupTime ?? '',
     suitableVehicle: request.suitableVehicle ?? '',
     serviceTicketFlag: request.serviceTicketFlag,
     companionName: request.companionName ?? '',
@@ -268,11 +285,15 @@ function RequestDetail(props: {
   const [wheelchairOpen, setWheelchairOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [recurringEnabled, setRecurringEnabled] = useState(false)
-  const [weekdays, setWeekdays] = useState<number[]>([])
+  const [dayPatterns, setDayPatterns] = useState<DayPatternForm[]>(emptyDayPatterns)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [userQuery, setUserQuery] = useState('')
   const [userPickerOpen, setUserPickerOpen] = useState(false)
+  const [seriesInfo, setSeriesInfo] = useState<{
+    isRecurring: boolean
+    recurringGroupId: number | null
+  } | null>(null)
 
   const userInputRef = useRef<HTMLInputElement>(null)
   const transportDateRef = useRef<HTMLInputElement>(null)
@@ -285,6 +306,11 @@ function RequestDetail(props: {
       setUserQuery('')
       setWheelchairOpen(false)
       setCancelOpen(false)
+      setSeriesInfo(null)
+      setRecurringEnabled(false)
+      setDayPatterns(emptyDayPatterns())
+      setStartDate('')
+      setEndDate('')
       return
     }
     window.api.requests.get(requestId).then((detail) => {
@@ -295,6 +321,10 @@ function RequestDetail(props: {
       setUserQuery(u ? `${u.name}${u.nameKana ? `(${u.nameKana})` : ''}` : '')
       setWheelchairOpen(f.wheelchairFlag || f.specialTransportFlag || f.serviceTicketFlag)
       setCancelOpen(!!f.cancelDate)
+      setSeriesInfo({
+        isRecurring: detail.request.isRecurring,
+        recurringGroupId: detail.request.recurringGroupId
+      })
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestId])
@@ -330,8 +360,8 @@ function RequestDetail(props: {
       .slice(0, 8)
   }, [userQuery, usersMaster])
 
-  function toggleWeekday(day: number): void {
-    setWeekdays((prev) => (prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]))
+  function updateDayPattern(day: number, patch: Partial<DayPatternForm>): void {
+    setDayPatterns((prev) => prev.map((p, i) => (i === day ? { ...p, ...patch } : p)))
   }
 
   async function save(): Promise<void> {
@@ -359,7 +389,6 @@ function RequestDetail(props: {
     const requestCommon = {
       userId: form.userId,
       requestedBy: form.requestedBy || null,
-      pickupTime: form.pickupTime || null,
       suitableVehicle: form.suitableVehicle || null,
       serviceTicketFlag: form.serviceTicketFlag,
       companionName: form.companionName || null,
@@ -374,7 +403,15 @@ function RequestDetail(props: {
     setError(null)
     try {
       if (requestId === 'new' && recurringEnabled) {
-        if (weekdays.length === 0) {
+        const enabledPatterns: RecurringDayPattern[] = dayPatterns
+          .map((p, day) => ({ day, ...p }))
+          .filter((p) => p.enabled)
+          .map((p) => ({
+            weekday: p.day,
+            pickupTime: p.pickupTime || null,
+            returnPickupTime: p.returnPickupTime || null
+          }))
+        if (enabledPatterns.length === 0) {
           setError('定期搬送の曜日を1つ以上選択してください')
           return
         }
@@ -387,7 +424,7 @@ function RequestDetail(props: {
           request: requestCommon,
           destinations,
           receivedDate: form.receivedDate,
-          weekdays,
+          dayPatterns: enabledPatterns,
           startDate,
           endDate
         }
@@ -406,6 +443,8 @@ function RequestDetail(props: {
         request: {
           receivedDate: form.receivedDate,
           transportDate: form.transportDate,
+          pickupTime: form.pickupTime || null,
+          returnPickupTime: form.returnPickupTime || null,
           ...requestCommon
         },
         destinations
@@ -430,6 +469,19 @@ function RequestDetail(props: {
     )
     if (!ok) return
     await window.api.requests.remove(requestId)
+    onDeleted()
+  }
+
+  async function deleteSeries(): Promise<void> {
+    if (!seriesInfo?.recurringGroupId) return
+    const ok = window.confirm(
+      'この定期搬送に属する依頼をまとめて削除します。実績が既に入力されている日は削除されません。よろしいですか？'
+    )
+    if (!ok) return
+    const result = await window.api.requests.deleteRecurringGroup(seriesInfo.recurringGroupId)
+    window.alert(
+      `${result.deleted}件削除しました${result.skipped > 0 ? `(実績が既にある${result.skipped}件はスキップ)` : ''}`
+    )
     onDeleted()
   }
 
@@ -525,20 +577,7 @@ function RequestDetail(props: {
 
         {recurringEnabled && requestId === 'new' ? (
           <div style={{ border: '1px dashed #999', padding: 8, marginBottom: 8 }}>
-            <div style={{ marginBottom: 8 }}>
-              <label style={{ display: 'block', marginBottom: 2 }}>曜日 *</label>
-              {WEEKDAY_LABELS.map((label, day) => (
-                <label key={day} style={{ marginRight: 8 }}>
-                  <input
-                    type="checkbox"
-                    checked={weekdays.includes(day)}
-                    onChange={() => toggleWeekday(day)}
-                  />{' '}
-                  {label}
-                </label>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', marginBottom: 2 }}>開始日 *</label>
                 <input
@@ -559,22 +598,78 @@ function RequestDetail(props: {
                 />
               </div>
             </div>
+
+            <label style={{ display: 'block', marginBottom: 4 }}>
+              曜日・往路/復路の予定時刻 *（曜日ごとに時刻を変えられます）
+            </label>
+            <table style={{ borderCollapse: 'collapse', width: '100%' }}>
+              <thead>
+                <tr>
+                  <th style={cellHeaderStyle}></th>
+                  <th style={cellHeaderStyle}>曜日</th>
+                  <th style={cellHeaderStyle}>往路時刻</th>
+                  <th style={cellHeaderStyle}>復路時刻</th>
+                </tr>
+              </thead>
+              <tbody>
+                {WEEKDAY_LABELS.map((label, day) => (
+                  <tr key={day}>
+                    <td style={cellStyle}>
+                      <input
+                        type="checkbox"
+                        checked={dayPatterns[day].enabled}
+                        onChange={(e) => updateDayPattern(day, { enabled: e.target.checked })}
+                      />
+                    </td>
+                    <td style={cellStyle}>{label}</td>
+                    <td style={cellStyle}>
+                      <input
+                        type="time"
+                        value={dayPatterns[day].pickupTime}
+                        disabled={!dayPatterns[day].enabled}
+                        onChange={(e) => updateDayPattern(day, { pickupTime: e.target.value })}
+                        style={{ padding: 4, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </td>
+                    <td style={cellStyle}>
+                      <input
+                        type="time"
+                        value={dayPatterns[day].returnPickupTime}
+                        disabled={!dayPatterns[day].enabled}
+                        onChange={(e) =>
+                          updateDayPattern(day, { returnPickupTime: e.target.value })
+                        }
+                        style={{ padding: 4, width: '100%', boxSizing: 'border-box' }}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
-          <DateField
-            label="搬送日 *"
-            inputRef={transportDateRef}
-            value={form.transportDate}
-            onChange={(v) => update('transportDate', v)}
-          />
+          <>
+            <DateField
+              label="搬送日 *"
+              inputRef={transportDateRef}
+              value={form.transportDate}
+              onChange={(v) => update('transportDate', v)}
+            />
+            <Field
+              label="迎え時刻"
+              type="time"
+              value={form.pickupTime}
+              onChange={(v) => update('pickupTime', v)}
+            />
+            <Field
+              label="復路予定時刻"
+              type="time"
+              value={form.returnPickupTime}
+              onChange={(v) => update('returnPickupTime', v)}
+            />
+          </>
         )}
 
-        <Field
-          label="迎え時刻"
-          type="time"
-          value={form.pickupTime}
-          onChange={(v) => update('pickupTime', v)}
-        />
         <Field
           label="適合車種"
           value={form.suitableVehicle}
@@ -740,6 +835,17 @@ function RequestDetail(props: {
       </fieldset>
 
       <Field label="備考" value={form.remarks} onChange={(v) => update('remarks', v)} />
+
+      {seriesInfo?.isRecurring && seriesInfo.recurringGroupId && (
+        <div style={{ border: '1px dashed #999', padding: 8, marginBottom: 12 }}>
+          <p style={{ margin: '0 0 8px' }}>
+            🔁 この依頼は定期搬送(グループ#{seriesInfo.recurringGroupId})の一部です。
+          </p>
+          <button onClick={deleteSeries} style={{ color: 'red' }}>
+            このシリーズの依頼をまとめて削除
+          </button>
+        </div>
+      )}
 
       {error && <p style={{ color: 'red' }}>{error}</p>}
       <button onClick={save}>保存</button>{' '}
