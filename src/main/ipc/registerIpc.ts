@@ -32,6 +32,7 @@ import {
   deleteRecurringGroup,
   deleteRequest,
   getRequestDetail,
+  listRecurringGroupsForUser,
   listRequests,
   updateRequest
 } from '../db/repositories/requestRepository'
@@ -100,6 +101,9 @@ export function registerIpc(): void {
   ipcMain.handle('requests:remove', (_e, id) => deleteRequest(id))
   ipcMain.handle('requests:createRecurring', (_e, input) => createRecurringRequests(input))
   ipcMain.handle('requests:deleteRecurringGroup', (_e, groupId) => deleteRecurringGroup(groupId))
+  ipcMain.handle('requests:listRecurringGroupsForUser', (_e, userId) =>
+    listRecurringGroupsForUser(userId)
+  )
 
   ipcMain.handle('results:listStatusForDate', (_e, date) => listRequestResultStatus(date))
   ipcMain.handle('results:get', (_e, id) => getResultDetail(id))

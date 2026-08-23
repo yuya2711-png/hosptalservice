@@ -43,7 +43,9 @@ const api: IpcApi = {
     remove: (id) => ipcRenderer.invoke('requests:remove', id),
     createRecurring: (input) => ipcRenderer.invoke('requests:createRecurring', input),
     deleteRecurringGroup: (groupId) =>
-      ipcRenderer.invoke('requests:deleteRecurringGroup', groupId)
+      ipcRenderer.invoke('requests:deleteRecurringGroup', groupId),
+    listRecurringGroupsForUser: (userId) =>
+      ipcRenderer.invoke('requests:listRecurringGroupsForUser', userId)
   },
 
   results: {

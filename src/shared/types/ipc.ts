@@ -16,6 +16,7 @@ import type {
   NewTransportResultInput,
   NewUser,
   NewUserInsuranceCertificate,
+  RecurringGroupSummary,
   RecurringRequestInput,
   RequestResultStatusItem,
   ServicePriceRevision,
@@ -84,6 +85,7 @@ export interface IpcApi {
     remove: (id: number) => Promise<void>
     createRecurring: (input: RecurringRequestInput) => Promise<TransportRequestDetail[]>
     deleteRecurringGroup: (groupId: number) => Promise<{ deleted: number; skipped: number }>
+    listRecurringGroupsForUser: (userId: number) => Promise<RecurringGroupSummary[]>
   }
 
   results: {

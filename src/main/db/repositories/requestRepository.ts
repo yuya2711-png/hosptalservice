@@ -3,6 +3,7 @@ import { getCurrentOperator } from '../../operatorState'
 import type {
   NewRequestDestination,
   NewTransportRequestInput,
+  RecurringGroupSummary,
   RecurringRequestInput,
   RequestDestination,
   TransportRequest,
@@ -373,4 +374,59 @@ export function deleteRecurringGroup(groupId: number): { deleted: number; skippe
     deleted++
   }
   return { deleted, skipped }
+}
+
+// 利用者マスタの「定期搬送」タブ用: その利用者が持つ定期搬送グループごとの要約一覧
+export function listRecurringGroupsForUser(userId: number): RecurringGroupSummary[] {
+  const db = getDb()
+  const groupRows = db
+    .prepare(
+      `SELECT RecurringGroupId,
+              MIN(TransportDate) AS StartDate,
+              MAX(TransportDate) AS EndDate,
+              COUNT(*) AS TotalCount,
+              SUM(CASE WHEN TransportDate >= date('now','localtime') THEN 1 ELSE 0 END) AS UpcomingCount,
+              MIN(RequestId) AS SampleRequestId
+         FROM T_TransportRequest
+        WHERE UserId = ? AND IsRecurring = 1 AND RecurringGroupId IS NOT NULL
+        GROUP BY RecurringGroupId
+        ORDER BY MAX(TransportDate) DESC`
+    )
+    .all(userId) as unknown as {
+    RecurringGroupId: number
+    StartDate: string
+    EndDate: string
+    TotalCount: number
+    UpcomingCount: number
+    SampleRequestId: number
+  }[]
+
+  return groupRows.map((row) => {
+    const dateRows = db
+      .prepare('SELECT TransportDate FROM T_TransportRequest WHERE RecurringGroupId = ?')
+      .all(row.RecurringGroupId) as unknown as { TransportDate: string }[]
+    const weekdays = [
+      ...new Set(dateRows.map((d) => new Date(`${d.TransportDate}T00:00:00`).getDay()))
+    ].sort((a, b) => a - b)
+
+    const destRows = db
+      .prepare(
+        `SELECT d.Name
+           FROM T_RequestDestination rd
+           JOIN M_Destination d ON d.DestinationId = rd.DestinationId
+          WHERE rd.RequestId = ?
+          ORDER BY rd.SeqNo`
+      )
+      .all(row.SampleRequestId) as unknown as { Name: string }[]
+
+    return {
+      recurringGroupId: row.RecurringGroupId,
+      startDate: row.StartDate,
+      endDate: row.EndDate,
+      totalCount: row.TotalCount,
+      upcomingCount: row.UpcomingCount,
+      weekdays,
+      destinationNames: destRows.map((d) => d.Name)
+    }
+  })
 }

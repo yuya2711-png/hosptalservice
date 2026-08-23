@@ -167,6 +167,17 @@ export interface RecurringRequestInput {
   endDate: string
 }
 
+// 利用者マスタの「定期搬送」タブ表示用: 同じRecurringGroupIdを持つ依頼群の要約
+export interface RecurringGroupSummary {
+  recurringGroupId: number
+  startDate: string
+  endDate: string
+  totalCount: number
+  upcomingCount: number
+  weekdays: number[]
+  destinationNames: string[]
+}
+
 export interface TransportResult {
   resultId: number
   transportDate: string
@@ -193,6 +204,8 @@ export interface ResultLeg {
   vehicleNo: string | null
   driverId: number | null
   distanceKm: number | null
+  // この脚(往路/復路)だけを取消にする(片道のみキャンセルする運用があるため)
+  cancelFlag: boolean
 }
 
 export interface ResultDestination {
@@ -204,6 +217,8 @@ export interface ResultDestination {
   tsuuinKaigoKihonFlag: boolean
   physicalCareFlag: boolean
   inHospitalCareFlag: boolean
+  // 透析通院の実績であることを示すフラグ
+  dialysisFlag: boolean
   advancedExpense: number | null
   hospitalStaffName: string | null
   calculatedFee: number | null
@@ -212,6 +227,8 @@ export interface ResultDestination {
   physicalCareFeeAmount: number | null
   ancillaryServiceFeeAmount: number | null
   specialFeeAmount: number | null
+  // 利用者マスタの特別搬送区分(認定)が無い利用者でも、実績ごとにスポットで区分を指定できる
+  specialTransportCategory: string | null
 }
 
 export interface ResultDestinationDetail extends ResultDestination {
@@ -234,6 +251,7 @@ export type NewResultLeg = Pick<
   | 'vehicleNo'
   | 'driverId'
   | 'distanceKm'
+  | 'cancelFlag'
 >
 
 export type NewResultDestination = Pick<
@@ -243,6 +261,7 @@ export type NewResultDestination = Pick<
   | 'tsuuinKaigoKihonFlag'
   | 'physicalCareFlag'
   | 'inHospitalCareFlag'
+  | 'dialysisFlag'
   | 'advancedExpense'
   | 'hospitalStaffName'
   | 'calculatedFee'
@@ -250,6 +269,7 @@ export type NewResultDestination = Pick<
   | 'physicalCareFeeAmount'
   | 'ancillaryServiceFeeAmount'
   | 'specialFeeAmount'
+  | 'specialTransportCategory'
 > & { legs: NewResultLeg[] }
 
 // 実績のヘッダ更新で編集できるのはこれらのフィールドのみ(搬送日・利用者・元依頼は

@@ -353,11 +353,9 @@ function RequestDetail(props: {
   }
 
   const matchingUsers = useMemo(() => {
-    if (!userQuery.trim()) return []
     const q = userQuery.trim()
-    return usersMaster
-      .filter((u) => u.name.includes(q) || (u.nameKana && u.nameKana.includes(q)))
-      .slice(0, 8)
+    if (!q) return usersMaster
+    return usersMaster.filter((u) => u.name.includes(q) || (u.nameKana && u.nameKana.includes(q)))
   }, [userQuery, usersMaster])
 
   function updateDayPattern(day: number, patch: Partial<DayPatternForm>): void {
@@ -510,10 +508,10 @@ function RequestDetail(props: {
             }}
             onFocus={() => setUserPickerOpen(true)}
             onBlur={() => setTimeout(() => setUserPickerOpen(false), 150)}
-            placeholder="氏名・カナで検索"
+            placeholder="クリックして一覧表示、または氏名・カナで検索"
             style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
           />
-          {userPickerOpen && matchingUsers.length > 0 && (
+          {userPickerOpen && (
             <ul
               style={{
                 listStyle: 'none',
@@ -525,10 +523,13 @@ function RequestDetail(props: {
                 border: '1px solid #ccc',
                 width: '100%',
                 boxSizing: 'border-box',
-                maxHeight: 200,
+                maxHeight: 260,
                 overflowY: 'auto'
               }}
             >
+              {matchingUsers.length === 0 && (
+                <li style={{ padding: 6, color: '#888' }}>該当する利用者がいません</li>
+              )}
               {matchingUsers.map((u) => (
                 <li key={u.userId}>
                   <button
@@ -544,7 +545,8 @@ function RequestDetail(props: {
                       textAlign: 'left',
                       padding: 6,
                       border: 'none',
-                      background: 'transparent',
+                      background:
+                        form.userId === u.userId ? '#eef' : 'transparent',
                       cursor: 'pointer'
                     }}
                   >

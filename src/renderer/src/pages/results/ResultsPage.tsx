@@ -160,6 +160,7 @@ interface LegForm {
   vehicleNo: string
   driverId: number | null
   distanceKm: string
+  cancelFlag: boolean
 }
 
 function emptyLeg(): LegForm {
@@ -171,7 +172,8 @@ function emptyLeg(): LegForm {
     transferTime: '',
     vehicleNo: '',
     driverId: null,
-    distanceKm: ''
+    distanceKm: '',
+    cancelFlag: false
   }
 }
 
@@ -181,6 +183,7 @@ interface ResultDestForm {
   tsuuinKaigoKihonFlag: boolean
   physicalCareFlag: boolean
   inHospitalCareFlag: boolean
+  dialysisFlag: boolean
   advancedExpense: string
   hospitalStaffName: string
   calculatedFee: string
@@ -188,6 +191,7 @@ interface ResultDestForm {
   physicalCareFeeAmount: string
   ancillaryServiceFeeAmount: string
   specialFeeAmount: string
+  specialTransportCategory: string
   legs: LegForm[]
 }
 
@@ -200,10 +204,12 @@ function parseTimeToMinutes(t: string): number | null {
 }
 
 // 往路(＋復路)の所要時間の合計(分)。時刻が両方揃っている脚のみ合算する。日またぎは1日分繰り上げる。
+// 取消済みの脚は合算しない。
 function totalMinutes(legs: LegForm[]): number | null {
   let total = 0
   let any = false
   for (const leg of legs) {
+    if (leg.cancelFlag) continue
     const dep = parseTimeToMinutes(leg.departureTime)
     const arr = parseTimeToMinutes(leg.arrivalTime)
     if (dep !== null && arr !== null) {
@@ -240,6 +246,7 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
       tsuuinKaigoKihonFlag: d.tsuuinKaigoKihonFlag,
       physicalCareFlag: d.physicalCareFlag,
       inHospitalCareFlag: d.inHospitalCareFlag,
+      dialysisFlag: d.dialysisFlag,
       advancedExpense: d.advancedExpense !== null ? String(d.advancedExpense) : '',
       hospitalStaffName: d.hospitalStaffName ?? '',
       calculatedFee: d.calculatedFee !== null ? String(d.calculatedFee) : '',
@@ -248,6 +255,7 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
       ancillaryServiceFeeAmount:
         d.ancillaryServiceFeeAmount !== null ? String(d.ancillaryServiceFeeAmount) : '',
       specialFeeAmount: d.specialFeeAmount !== null ? String(d.specialFeeAmount) : '',
+      specialTransportCategory: d.specialTransportCategory ?? '',
       legs: [...d.legs]
         .sort((a, b) => a.legType - b.legType)
         .map((leg) => ({
@@ -258,7 +266,8 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
           transferTime: leg.transferTime ?? '',
           vehicleNo: leg.vehicleNo ?? '',
           driverId: leg.driverId,
-          distanceKm: leg.distanceKm !== null ? String(leg.distanceKm) : ''
+          distanceKm: leg.distanceKm !== null ? String(leg.distanceKm) : '',
+          cancelFlag: leg.cancelFlag
         }))
     }))
   }
@@ -277,6 +286,7 @@ function ResultDetailForm(props: {
   const [transportDate, setTransportDate] = useState('')
   const [userId, setUserId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [specialCategories, setSpecialCategories] = useState<string[]>([])
 
   useEffect(() => {
     window.api.results.get(resultId).then((detail) => {
@@ -287,6 +297,12 @@ function ResultDetailForm(props: {
       }
     })
   }, [resultId])
+
+  useEffect(() => {
+    window.api.specialTransportRates.list().then((rates) => {
+      setSpecialCategories([...new Set(rates.map((r) => r.category))])
+    })
+  }, [])
 
   if (!form) return <p style={{ padding: 16 }}>読み込み中...</p>
 
@@ -347,10 +363,16 @@ function ResultDetailForm(props: {
 
   async function calculateSpecialFee(index: number): Promise<void> {
     if (userId === null) return
-    const user = await window.api.users.get(userId)
-    const category = user?.specialTransportCategory
+    const dest = form?.destinations[index]
+    let category = dest?.specialTransportCategory || null
     if (!category) {
-      window.alert('この利用者には特別搬送区分が設定されていません。利用者マスタで設定してください。')
+      const user = await window.api.users.get(userId)
+      category = user?.specialTransportCategory ?? null
+    }
+    if (!category) {
+      window.alert(
+        'この利用者には特別搬送区分が設定されていません。利用者マスタで設定するか、この実績の「特別搬送区分」欄でスポットの区分を選択してください。'
+      )
       return
     }
     const fee = await window.api.specialTransportRates.findRate({
@@ -363,7 +385,7 @@ function ResultDetailForm(props: {
       )
       return
     }
-    updateDest(index, { specialFeeAmount: String(fee) })
+    updateDest(index, { specialFeeAmount: String(fee), specialTransportCategory: category })
   }
 
   function toggleReturnLeg(destIndex: number, enabled: boolean): void {
@@ -392,6 +414,7 @@ function ResultDetailForm(props: {
         tsuuinKaigoKihonFlag: d.tsuuinKaigoKihonFlag,
         physicalCareFlag: d.physicalCareFlag,
         inHospitalCareFlag: d.inHospitalCareFlag,
+        dialysisFlag: d.dialysisFlag,
         advancedExpense: d.advancedExpense !== '' ? Number(d.advancedExpense) : null,
         hospitalStaffName: d.hospitalStaffName || null,
         calculatedFee: d.calculatedFee !== '' ? Number(d.calculatedFee) : null,
@@ -400,6 +423,7 @@ function ResultDetailForm(props: {
         ancillaryServiceFeeAmount:
           d.ancillaryServiceFeeAmount !== '' ? Number(d.ancillaryServiceFeeAmount) : null,
         specialFeeAmount: d.specialFeeAmount !== '' ? Number(d.specialFeeAmount) : null,
+        specialTransportCategory: d.specialTransportCategory || null,
         legs: d.legs.map((leg, li) => ({
           legType: li === 0 ? 1 : 2,
           departureLocation: leg.departureLocation || null,
@@ -409,7 +433,8 @@ function ResultDetailForm(props: {
           transferTime: leg.transferTime || null,
           vehicleNo: leg.vehicleNo || null,
           driverId: leg.driverId,
-          distanceKm: leg.distanceKm !== '' ? Number(leg.distanceKm) : null
+          distanceKm: leg.distanceKm !== '' ? Number(leg.distanceKm) : null,
+          cancelFlag: leg.cancelFlag
         }))
       })
     }
@@ -568,6 +593,14 @@ function ResultDetailForm(props: {
               />{' '}
               院内介助
             </label>
+            <label style={{ marginRight: 12 }}>
+              <input
+                type="checkbox"
+                checked={dest.dialysisFlag}
+                onChange={(e) => updateDest(di, { dialysisFlag: e.target.checked })}
+              />{' '}
+              透析
+            </label>
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -673,13 +706,28 @@ function ResultDetailForm(props: {
                   style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
                 />
               </div>
+              <div style={{ flex: 1 }}>
+                <label style={{ display: 'block', marginBottom: 2 }}>特別搬送区分</label>
+                <select
+                  value={dest.specialTransportCategory}
+                  onChange={(e) => updateDest(di, { specialTransportCategory: e.target.value })}
+                  style={{ padding: 6, width: '100%' }}
+                >
+                  <option value="">(利用者マスタの区分を使用)</option>
+                  {specialCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <button type="button" onClick={() => calculateSpecialFee(di)}>
                 特別搬送区分から計算
               </button>
             </div>
             <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
-              「特別搬送区分から計算」は利用者マスタの特別搬送区分から特別搬送料金マスタを参照し、特別自費欄に入力します。
-              介護基本料・身体介助・付帯サービスは金額を直接入力してください。
+              「特別搬送区分から計算」は、この実績の「特別搬送区分」欄で選んだ区分(未選択なら利用者マスタの特別搬送区分)から特別搬送料金マスタを参照し、特別自費欄に入力します。
+              認定を持たない利用者のスポット的な特別搬送は、この欄で区分を直接選んでください。介護基本料・身体介助・付帯サービスは金額を直接入力してください。
             </p>
           </div>
         </fieldset>
@@ -703,7 +751,24 @@ function LegEditor(props: {
   const { label, leg, driversMaster, onChange } = props
   return (
     <div style={{ border: '1px solid #ddd', padding: 8, marginBottom: 8 }}>
-      <div style={{ fontWeight: 'bold', marginBottom: 6 }}>{label}</div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 6
+        }}
+      >
+        <div style={{ fontWeight: 'bold' }}>{label}</div>
+        <label style={{ color: leg.cancelFlag ? 'red' : undefined }}>
+          <input
+            type="checkbox"
+            checked={leg.cancelFlag}
+            onChange={(e) => onChange({ cancelFlag: e.target.checked })}
+          />{' '}
+          この{label}を取消
+        </label>
+      </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
         <MiniField
           label="出発地"

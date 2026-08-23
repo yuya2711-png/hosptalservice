@@ -1,5 +1,53 @@
-import { useEffect, useState, type ReactElement } from 'react'
-import type { NewUser, NewUserInsuranceCertificate, User } from '@shared/types/entities'
+import { useEffect, useRef, useState, type ReactElement } from 'react'
+import type {
+  Department,
+  Destination,
+  NewRequestDestination,
+  NewUser,
+  NewUserInsuranceCertificate,
+  RecurringDayPattern,
+  RecurringGroupSummary,
+  RecurringRequestInput,
+  User
+} from '@shared/types/entities'
+
+const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+interface DayPatternForm {
+  enabled: boolean
+  pickupTime: string
+  returnPickupTime: string
+}
+
+function emptyDayPatterns(): DayPatternForm[] {
+  return WEEKDAY_LABELS.map(() => ({ enabled: false, pickupTime: '', returnPickupTime: '' }))
+}
+
+interface RecurDestForm {
+  destinationId: number | null
+  departmentId: number | null
+  reason: string
+  roundTripFlag: boolean
+  kaigoKihonFlag: boolean
+}
+
+const emptyRecurDestination: RecurDestForm = {
+  destinationId: null,
+  departmentId: null,
+  reason: '',
+  roundTripFlag: true,
+  kaigoKihonFlag: false
+}
+
+const dayCellHeaderStyle = { textAlign: 'left' as const, borderBottom: '1px solid #ccc', padding: 6 }
+const dayCellStyle = { borderBottom: '1px solid #eee', padding: 6 }
+
+function todayStr(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+    d.getDate()
+  ).padStart(2, '0')}`
+}
 
 const emptyUser: NewUser = {
   name: '',
@@ -97,7 +145,7 @@ function UserDetail(props: {
   onDeleted: () => void
 }): ReactElement {
   const { userId, onSaved, onDeleted } = props
-  const [tab, setTab] = useState<'basic' | 'certificates'>('basic')
+  const [tab, setTab] = useState<'basic' | 'certificates' | 'recurring'>('basic')
   const [form, setForm] = useState<NewUser>(emptyUser)
   const [error, setError] = useState<string | null>(null)
   const [savedUser, setSavedUser] = useState<User | null>(null)
@@ -174,6 +222,12 @@ function UserDetail(props: {
           disabled={tab === 'certificates' || userId === 'new'}
         >
           被保険者証情報履歴
+        </button>{' '}
+        <button
+          onClick={() => setTab('recurring')}
+          disabled={tab === 'recurring' || userId === 'new'}
+        >
+          定期搬送
         </button>
       </div>
 
@@ -281,6 +335,8 @@ function UserDetail(props: {
       )}
 
       {tab === 'certificates' && userId !== 'new' && <CertificateHistory userId={userId} />}
+
+      {tab === 'recurring' && userId !== 'new' && <RecurringTab userId={userId} />}
     </div>
   )
 }
@@ -427,6 +483,413 @@ function CertificateHistory(props: { userId: number }): ReactElement {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+function RecurringTab(props: { userId: number }): ReactElement {
+  const { userId } = props
+  const [groups, setGroups] = useState<RecurringGroupSummary[]>([])
+  const [destinationsMaster, setDestinationsMaster] = useState<Destination[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
+  const [formOpen, setFormOpen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const [receivedDate, setReceivedDate] = useState(todayStr())
+  const [requestedBy, setRequestedBy] = useState('')
+  const [suitableVehicle, setSuitableVehicle] = useState('')
+  const [paidFlag, setPaidFlag] = useState(true)
+  const [wheelchairFlag, setWheelchairFlag] = useState(false)
+  const [specialTransportFlag, setSpecialTransportFlag] = useState(false)
+  const [serviceTicketFlag, setServiceTicketFlag] = useState(false)
+  const [companionName, setCompanionName] = useState('')
+  const [remarks, setRemarks] = useState('')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [dayPatterns, setDayPatterns] = useState<DayPatternForm[]>(emptyDayPatterns)
+  const [destinations, setDestinations] = useState<RecurDestForm[]>([{ ...emptyRecurDestination }])
+
+  const startDateRef = useRef<HTMLInputElement>(null)
+  const destinationRefs = useRef<(HTMLSelectElement | null)[]>([])
+
+  async function reload(): Promise<void> {
+    setGroups(await window.api.requests.listRecurringGroupsForUser(userId))
+  }
+
+  useEffect(() => {
+    reload()
+    window.api.destinations.list().then(setDestinationsMaster)
+    window.api.departments.list().then(setDepartments)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId])
+
+  function resetForm(): void {
+    setReceivedDate(todayStr())
+    setRequestedBy('')
+    setSuitableVehicle('')
+    setPaidFlag(true)
+    setWheelchairFlag(false)
+    setSpecialTransportFlag(false)
+    setServiceTicketFlag(false)
+    setCompanionName('')
+    setRemarks('')
+    setStartDate('')
+    setEndDate('')
+    setDayPatterns(emptyDayPatterns())
+    setDestinations([{ ...emptyRecurDestination }])
+    setError(null)
+  }
+
+  function updateDayPattern(day: number, patch: Partial<DayPatternForm>): void {
+    setDayPatterns((prev) => prev.map((p, i) => (i === day ? { ...p, ...patch } : p)))
+  }
+
+  function updateDestination(index: number, patch: Partial<RecurDestForm>): void {
+    setDestinations((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)))
+  }
+
+  function addDestinationRow(): void {
+    if (destinations.length >= 3) return
+    setDestinations((prev) => [...prev, { ...emptyRecurDestination }])
+  }
+
+  function removeDestinationRow(index: number): void {
+    setDestinations((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  async function save(): Promise<void> {
+    const enabledPatterns: RecurringDayPattern[] = dayPatterns
+      .map((p, day) => ({ day, ...p }))
+      .filter((p) => p.enabled)
+      .map((p) => ({
+        weekday: p.day,
+        pickupTime: p.pickupTime || null,
+        returnPickupTime: p.returnPickupTime || null
+      }))
+    if (enabledPatterns.length === 0) {
+      setError('曜日を1つ以上選択してください')
+      return
+    }
+    if (!startDate || !endDate) {
+      setError('開始日・終了日を入力してください')
+      startDateRef.current?.focus()
+      return
+    }
+    const destInputs: NewRequestDestination[] = destinations
+      .filter((d) => d.destinationId !== null)
+      .map((d) => ({
+        destinationId: d.destinationId as number,
+        departmentId: d.departmentId,
+        reason: d.reason || null,
+        roundTripFlag: d.roundTripFlag,
+        kaigoKihonFlag: d.kaigoKihonFlag
+      }))
+    if (destInputs.length === 0) {
+      setError('搬送先を1件以上指定してください')
+      destinationRefs.current[0]?.focus()
+      return
+    }
+
+    setError(null)
+    try {
+      const input: RecurringRequestInput = {
+        request: {
+          userId,
+          requestedBy: requestedBy || null,
+          suitableVehicle: suitableVehicle || null,
+          serviceTicketFlag,
+          companionName: companionName || null,
+          wheelchairFlag,
+          specialTransportFlag,
+          cancelDate: null,
+          cancelReason: null,
+          paidFlag,
+          remarks: remarks || null
+        },
+        destinations: destInputs,
+        receivedDate,
+        dayPatterns: enabledPatterns,
+        startDate,
+        endDate
+      }
+      await window.api.requests.createRecurring(input)
+      setFormOpen(false)
+      resetForm()
+      await reload()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function deleteSeries(groupId: number): Promise<void> {
+    const ok = window.confirm(
+      'この定期搬送に属する依頼をまとめて削除します。実績が既に入力されている日は削除されません。よろしいですか？'
+    )
+    if (!ok) return
+    const result = await window.api.requests.deleteRecurringGroup(groupId)
+    window.alert(
+      `${result.deleted}件削除しました${result.skipped > 0 ? `(実績が既にある${result.skipped}件はスキップ)` : ''}`
+    )
+    await reload()
+  }
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      {groups.length === 0 && (
+        <p style={{ color: '#888' }}>現在登録されている定期搬送はありません。</p>
+      )}
+      {groups.map((g) => (
+        <div
+          key={g.recurringGroupId}
+          style={{ border: '1px solid #ddd', padding: 12, marginBottom: 12 }}
+        >
+          <div>
+            <strong>{g.startDate} 〜 {g.endDate}</strong>（毎週{' '}
+            {g.weekdays.map((w) => WEEKDAY_LABELS[w]).join('・')}）
+          </div>
+          <div>搬送先: {g.destinationNames.join('、') || '(未設定)'}</div>
+          <div>
+            全{g.totalCount}件（残り{g.upcomingCount}件）
+          </div>
+          <button onClick={() => deleteSeries(g.recurringGroupId)} style={{ color: 'red' }}>
+            このシリーズをまとめて削除
+          </button>
+        </div>
+      ))}
+
+      {!formOpen && (
+        <button
+          onClick={() => {
+            resetForm()
+            setFormOpen(true)
+          }}
+        >
+          + 新規定期搬送を登録
+        </button>
+      )}
+
+      {formOpen && (
+        <div style={{ border: '1px dashed #999', padding: 12 }}>
+          <h3 style={{ marginTop: 0 }}>新規定期搬送</h3>
+
+          <Field
+            label="受付日"
+            type="date"
+            value={receivedDate}
+            onChange={setReceivedDate}
+          />
+          <Field label="依頼者" value={requestedBy} onChange={setRequestedBy} />
+
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', marginBottom: 2 }}>開始日 *</label>
+              <input
+                ref={startDateRef}
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ display: 'block', marginBottom: 2 }}>終了日 *</label>
+              <input
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
+                style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+              />
+            </div>
+          </div>
+
+          <label style={{ display: 'block', marginBottom: 4 }}>
+            曜日・往路/復路の予定時刻 *（曜日ごとに時刻を変えられます）
+          </label>
+          <table style={{ borderCollapse: 'collapse', width: '100%', marginBottom: 12 }}>
+            <thead>
+              <tr>
+                <th style={dayCellHeaderStyle}></th>
+                <th style={dayCellHeaderStyle}>曜日</th>
+                <th style={dayCellHeaderStyle}>往路時刻</th>
+                <th style={dayCellHeaderStyle}>復路時刻</th>
+              </tr>
+            </thead>
+            <tbody>
+              {WEEKDAY_LABELS.map((label, day) => (
+                <tr key={day}>
+                  <td style={dayCellStyle}>
+                    <input
+                      type="checkbox"
+                      checked={dayPatterns[day].enabled}
+                      onChange={(e) => updateDayPattern(day, { enabled: e.target.checked })}
+                    />
+                  </td>
+                  <td style={dayCellStyle}>{label}</td>
+                  <td style={dayCellStyle}>
+                    <input
+                      type="time"
+                      value={dayPatterns[day].pickupTime}
+                      disabled={!dayPatterns[day].enabled}
+                      onChange={(e) => updateDayPattern(day, { pickupTime: e.target.value })}
+                      style={{ padding: 4, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </td>
+                  <td style={dayCellStyle}>
+                    <input
+                      type="time"
+                      value={dayPatterns[day].returnPickupTime}
+                      disabled={!dayPatterns[day].enabled}
+                      onChange={(e) =>
+                        updateDayPattern(day, { returnPickupTime: e.target.value })
+                      }
+                      style={{ padding: 4, width: '100%', boxSizing: 'border-box' }}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <fieldset style={{ marginBottom: 12 }}>
+            <legend>搬送先（最大3件）</legend>
+            {destinations.map((dest, index) => (
+              <div key={index} style={{ border: '1px solid #ddd', padding: 8, marginBottom: 8 }}>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'block', marginBottom: 2 }}>搬送先{index + 1}</label>
+                  <select
+                    ref={(el) => {
+                      destinationRefs.current[index] = el
+                    }}
+                    value={dest.destinationId ?? ''}
+                    onChange={(e) =>
+                      updateDestination(index, {
+                        destinationId: e.target.value ? Number(e.target.value) : null
+                      })
+                    }
+                    style={{ padding: 6, width: '100%' }}
+                  >
+                    <option value="">選択してください</option>
+                    {destinationsMaster.map((d) => (
+                      <option key={d.destinationId} value={d.destinationId}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'block', marginBottom: 2 }}>診療科</label>
+                  <select
+                    value={dest.departmentId ?? ''}
+                    onChange={(e) =>
+                      updateDestination(index, {
+                        departmentId: e.target.value ? Number(e.target.value) : null
+                      })
+                    }
+                    style={{ padding: 6, width: '100%' }}
+                  >
+                    <option value="">指定なし</option>
+                    {departments.map((d) => (
+                      <option key={d.departmentId} value={d.departmentId}>
+                        {d.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ marginBottom: 8 }}>
+                  <label style={{ display: 'block', marginBottom: 2 }}>理由</label>
+                  <input
+                    type="text"
+                    value={dest.reason}
+                    onChange={(e) => updateDestination(index, { reason: e.target.value })}
+                    style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+                  />
+                </div>
+                <label style={{ marginRight: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={dest.roundTripFlag}
+                    onChange={(e) => updateDestination(index, { roundTripFlag: e.target.checked })}
+                  />{' '}
+                  往復
+                </label>
+                <label style={{ marginRight: 12 }}>
+                  <input
+                    type="checkbox"
+                    checked={dest.kaigoKihonFlag}
+                    onChange={(e) => updateDestination(index, { kaigoKihonFlag: e.target.checked })}
+                  />{' '}
+                  介護基本
+                </label>
+                {destinations.length > 1 && (
+                  <button type="button" onClick={() => removeDestinationRow(index)}>
+                    この搬送先を削除
+                  </button>
+                )}
+              </div>
+            ))}
+            {destinations.length < 3 && (
+              <button type="button" onClick={addDestinationRow}>
+                + 搬送先を追加
+              </button>
+            )}
+          </fieldset>
+
+          <Field label="適合車種" value={suitableVehicle} onChange={setSuitableVehicle} />
+          <div style={{ marginBottom: 8 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={paidFlag}
+                onChange={(e) => setPaidFlag(e.target.checked)}
+              />{' '}
+              有償
+            </label>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={wheelchairFlag}
+                onChange={(e) => setWheelchairFlag(e.target.checked)}
+              />{' '}
+              車椅子
+            </label>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={specialTransportFlag}
+                onChange={(e) => setSpecialTransportFlag(e.target.checked)}
+              />{' '}
+              特別搬送
+            </label>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={serviceTicketFlag}
+                onChange={(e) => setServiceTicketFlag(e.target.checked)}
+              />{' '}
+              提供票
+            </label>
+          </div>
+          <Field label="同乗者" value={companionName} onChange={setCompanionName} />
+          <Field label="備考" value={remarks} onChange={setRemarks} />
+
+          {error && <p style={{ color: 'red' }}>{error}</p>}
+          <button onClick={save}>保存（依頼を一括生成）</button>{' '}
+          <button
+            onClick={() => {
+              setFormOpen(false)
+              resetForm()
+            }}
+          >
+            キャンセル
+          </button>
+        </div>
+      )}
     </div>
   )
 }

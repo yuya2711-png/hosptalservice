@@ -35,6 +35,7 @@ interface ResultDestinationRow {
   TsuuinKaigoKihonFlag: number
   PhysicalCareFlag: number
   InHospitalCareFlag: number
+  DialysisFlag: number
   AdvancedExpense: number | null
   HospitalStaffName: string | null
   CalculatedFee: number | null
@@ -42,6 +43,7 @@ interface ResultDestinationRow {
   PhysicalCareFeeAmount: number | null
   AncillaryServiceFeeAmount: number | null
   SpecialFeeAmount: number | null
+  SpecialTransportCategory: string | null
 }
 
 interface ResultLegRow {
@@ -56,6 +58,7 @@ interface ResultLegRow {
   VehicleNo: string | null
   DriverId: number | null
   DistanceKm: number | null
+  CancelFlag: number
 }
 
 function mapResultRow(row: ResultRow): TransportResult {
@@ -86,7 +89,8 @@ function mapLegRow(row: ResultLegRow): ResultLeg {
     transferTime: row.TransferTime,
     vehicleNo: row.VehicleNo,
     driverId: row.DriverId,
-    distanceKm: row.DistanceKm
+    distanceKm: row.DistanceKm,
+    cancelFlag: row.CancelFlag === 1
   }
 }
 
@@ -100,13 +104,15 @@ function mapDestinationRow(row: ResultDestinationRow): Omit<ResultDestinationDet
     tsuuinKaigoKihonFlag: row.TsuuinKaigoKihonFlag === 1,
     physicalCareFlag: row.PhysicalCareFlag === 1,
     inHospitalCareFlag: row.InHospitalCareFlag === 1,
+    dialysisFlag: row.DialysisFlag === 1,
     advancedExpense: row.AdvancedExpense,
     hospitalStaffName: row.HospitalStaffName,
     calculatedFee: row.CalculatedFee,
     baseCareFeeAmount: row.BaseCareFeeAmount,
     physicalCareFeeAmount: row.PhysicalCareFeeAmount,
     ancillaryServiceFeeAmount: row.AncillaryServiceFeeAmount,
-    specialFeeAmount: row.SpecialFeeAmount
+    specialFeeAmount: row.SpecialFeeAmount,
+    specialTransportCategory: row.SpecialTransportCategory
   }
 }
 
@@ -172,7 +178,8 @@ export function listRequestResultStatus(date: string): RequestResultStatusItem[]
         .prepare(
           `SELECT COUNT(*) AS c FROM T_ResultDestination rd
            JOIN T_ResultLeg rl ON rl.ResultDestinationId = rd.ResultDestinationId AND rl.LegType = 1
-           WHERE rd.ResultId = ? AND rl.DepartureTime IS NOT NULL AND rl.ArrivalTime IS NOT NULL`
+           WHERE rd.ResultId = ?
+             AND ((rl.DepartureTime IS NOT NULL AND rl.ArrivalTime IS NOT NULL) OR rl.CancelFlag = 1)`
         )
         .get(resultId) as unknown as { c: number }
       status = destCount.c > 0 && filledCount.c >= destCount.c ? 'done' : 'in_progress'
@@ -216,13 +223,13 @@ function insertDestinationsAndLegs(
   const db = getDb()
   const destStmt = db.prepare(
     `INSERT INTO T_ResultDestination
-      (ResultId, SeqNo, DestinationId, DepartmentId, TsuuinKaigoKihonFlag, PhysicalCareFlag, InHospitalCareFlag, AdvancedExpense, HospitalStaffName, CalculatedFee, BaseCareFeeAmount, PhysicalCareFeeAmount, AncillaryServiceFeeAmount, SpecialFeeAmount)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (ResultId, SeqNo, DestinationId, DepartmentId, TsuuinKaigoKihonFlag, PhysicalCareFlag, InHospitalCareFlag, DialysisFlag, AdvancedExpense, HospitalStaffName, CalculatedFee, BaseCareFeeAmount, PhysicalCareFeeAmount, AncillaryServiceFeeAmount, SpecialFeeAmount, SpecialTransportCategory)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   const legStmt = db.prepare(
     `INSERT INTO T_ResultLeg
-      (ResultDestinationId, LegType, DepartureLocation, DepartureTime, ArrivalLocation, ArrivalTime, TransferTime, VehicleNo, DriverId, DistanceKm)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (ResultDestinationId, LegType, DepartureLocation, DepartureTime, ArrivalLocation, ArrivalTime, TransferTime, VehicleNo, DriverId, DistanceKm, CancelFlag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
 
   destinations.forEach((dest, index) => {
@@ -234,13 +241,15 @@ function insertDestinationsAndLegs(
       dest.tsuuinKaigoKihonFlag ? 1 : 0,
       dest.physicalCareFlag ? 1 : 0,
       dest.inHospitalCareFlag ? 1 : 0,
+      dest.dialysisFlag ? 1 : 0,
       dest.advancedExpense ?? null,
       dest.hospitalStaffName ?? null,
       dest.calculatedFee ?? null,
       dest.baseCareFeeAmount ?? null,
       dest.physicalCareFeeAmount ?? null,
       dest.ancillaryServiceFeeAmount ?? null,
-      dest.specialFeeAmount ?? null
+      dest.specialFeeAmount ?? null,
+      dest.specialTransportCategory ?? null
     )
     const resultDestinationId = Number(result.lastInsertRowid)
     for (const leg of dest.legs) {
@@ -254,7 +263,8 @@ function insertDestinationsAndLegs(
         leg.transferTime ?? null,
         leg.vehicleNo ?? null,
         leg.driverId ?? null,
-        leg.distanceKm ?? null
+        leg.distanceKm ?? null,
+        leg.cancelFlag ? 1 : 0
       )
     }
   })
@@ -303,6 +313,7 @@ export function createDraftForRequest(requestId: number): number | null {
       tsuuinKaigoKihonFlag: false,
       physicalCareFlag: false,
       inHospitalCareFlag: false,
+      dialysisFlag: false,
       advancedExpense: null,
       hospitalStaffName: null,
       calculatedFee: null,
@@ -310,6 +321,7 @@ export function createDraftForRequest(requestId: number): number | null {
       physicalCareFeeAmount: null,
       ancillaryServiceFeeAmount: null,
       specialFeeAmount: null,
+      specialTransportCategory: null,
       legs: d.roundTripFlag
         ? [{ ...emptyLeg(1) }, { ...emptyLeg(2) }]
         : [{ ...emptyLeg(1) }]
@@ -334,7 +346,8 @@ function emptyLeg(legType: 1 | 2): NewResultDestination['legs'][number] {
     transferTime: null,
     vehicleNo: null,
     driverId: null,
-    distanceKm: null
+    distanceKm: null,
+    cancelFlag: false
   }
 }
 
