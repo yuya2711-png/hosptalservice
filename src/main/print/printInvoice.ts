@@ -69,7 +69,8 @@ export function buildInvoiceHtml(data: InvoiceData, adjustments: InvoiceAdjustme
     ancillaryServiceFeeTotal +
     specialFeeTotal +
     advancedExpenseTotal +
-    data.cancellationFeeTotal
+    data.cancellationFeeTotal +
+    data.relocationFeeTotal
   const billedAmount =
     salesTotal +
     adjustments.taxAmount -
@@ -160,6 +161,7 @@ export function buildInvoiceHtml(data: InvoiceData, adjustments: InvoiceAdjustme
     <div class="summary-cell"><div class="label">特別自費</div><div class="value">${yen(specialFeeTotal)}</div></div>
     <div class="summary-cell"><div class="label">立替費用</div><div class="value">${yen(advancedExpenseTotal)}</div></div>
     <div class="summary-cell"><div class="label">キャンセル料金</div><div class="value">${yen(data.cancellationFeeTotal)}</div></div>
+    <div class="summary-cell"><div class="label">回送料金</div><div class="value">${yen(data.relocationFeeTotal)}</div></div>
     <div class="summary-cell highlight"><div class="label">売上合計</div><div class="value">${yen(salesTotal)}</div></div>
     <div class="summary-cell"><div class="label">外税</div><div class="value">${yen(adjustments.taxAmount)}</div></div>
     <div class="summary-cell"><div class="label">値引</div><div class="value">${yen(adjustments.discountAmount)}</div></div>

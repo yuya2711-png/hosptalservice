@@ -51,6 +51,8 @@ export interface User {
   contractDate: string | null
   // 契約者かどうか(契約者でない場合は保険が適用できないため)。対象項目は未確定で、現状は記録のみ
   isContractor: boolean
+  // 回送料金(事務所から6km超)の対象かどうか。ONの場合、搬送実績1件につき700円を自動加算する(billingRepository.ts参照)
+  kaisouFeeFlag: boolean
   remarks: string | null
   isDeleted: boolean
   createdAt: string
@@ -239,6 +241,8 @@ export interface ResultDestination {
   inHospitalCareFlag: boolean
   // 院内介助にかかった時間(分)。60分毎に3,300円を付帯サービス料金に自動加算する(billingRepository.ts参照)
   inHospitalCareMinutes: number | null
+  // 待機した時間(分)。15分毎に500円を付帯サービス料金に自動加算する(billingRepository.ts参照)
+  waitingMinutes: number | null
   // 透析通院の実績であることを示すフラグ
   dialysisFlag: boolean
   advancedExpense: number | null
@@ -286,6 +290,7 @@ export type NewResultDestination = Pick<
   | 'physicalCareFlag'
   | 'inHospitalCareFlag'
   | 'inHospitalCareMinutes'
+  | 'waitingMinutes'
   | 'dialysisFlag'
   | 'advancedExpense'
   | 'hospitalStaffName'
@@ -427,6 +432,8 @@ export interface InvoiceData {
   cancellationFeeTotal: number
   // タクシー券枚数×450円の合計(自動計算)。手入力の`taxiTicketOffsetAmount`調整額とは別枠で表示する
   taxiTicketTotal: number
+  // 回送料金の合計(自動計算)。利用者マスタのKaisouFeeFlagがONの場合、対象月の実績件数×700円
+  relocationFeeTotal: number
 }
 
 // 請求書印刷時に手動で指定する調整項目
@@ -475,6 +482,7 @@ export type NewUser = Pick<
   | 'careManager'
   | 'contractDate'
   | 'isContractor'
+  | 'kaisouFeeFlag'
   | 'remarks'
 >
 export type NewUserInsuranceCertificate = Omit<

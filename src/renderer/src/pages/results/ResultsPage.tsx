@@ -195,6 +195,7 @@ interface ResultDestForm {
   physicalCareFlag: boolean
   inHospitalCareFlag: boolean
   inHospitalCareMinutes: string
+  waitingMinutes: string
   dialysisFlag: boolean
   advancedExpense: string
   hospitalStaffName: string
@@ -217,6 +218,15 @@ function inHospitalCareFee(minutesStr: string): number {
   const minutes = Number(minutesStr)
   if (!minutesStr || !Number.isFinite(minutes) || minutes <= 0) return 0
   return Math.ceil(minutes / 60) * IN_HOSPITAL_CARE_FEE_PER_60MIN
+}
+
+// 待機料(円/15分)。billingRepository.tsのWAITING_FEE_PER_15MINと揃えること。
+const WAITING_FEE_PER_15MIN = 500
+
+function waitingFee(minutesStr: string): number {
+  const minutes = Number(minutesStr)
+  if (!minutesStr || !Number.isFinite(minutes) || minutes <= 0) return 0
+  return Math.ceil(minutes / 15) * WAITING_FEE_PER_15MIN
 }
 
 // 通院等乗降介助に該当しない脚(往路/復路、取消済みを除く)1件につき加算する基本乗車料。
@@ -289,6 +299,7 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
       physicalCareFlag: d.physicalCareFlag,
       inHospitalCareFlag: d.inHospitalCareFlag,
       inHospitalCareMinutes: d.inHospitalCareMinutes !== null ? String(d.inHospitalCareMinutes) : '',
+      waitingMinutes: d.waitingMinutes !== null ? String(d.waitingMinutes) : '',
       dialysisFlag: d.dialysisFlag,
       advancedExpense: d.advancedExpense !== null ? String(d.advancedExpense) : '',
       hospitalStaffName: d.hospitalStaffName ?? '',
@@ -473,6 +484,7 @@ function ResultDetailForm(props: {
         physicalCareFlag: d.physicalCareFlag,
         inHospitalCareFlag: d.inHospitalCareFlag,
         inHospitalCareMinutes: d.inHospitalCareMinutes !== '' ? Number(d.inHospitalCareMinutes) : null,
+        waitingMinutes: d.waitingMinutes !== '' ? Number(d.waitingMinutes) : null,
         dialysisFlag: d.dialysisFlag,
         advancedExpense: d.advancedExpense !== '' ? Number(d.advancedExpense) : null,
         hospitalStaffName: d.hospitalStaffName || null,
@@ -708,15 +720,35 @@ function ResultDetailForm(props: {
             )}
           </div>
 
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: 'block', marginBottom: 2 }}>待機時間(分)</label>
+            <input
+              type="number"
+              value={dest.waitingMinutes}
+              onChange={(e) => updateDest(di, { waitingMinutes: e.target.value })}
+              style={{ padding: 6, width: 160, boxSizing: 'border-box' }}
+            />
+            {waitingFee(dest.waitingMinutes) > 0 && (
+              <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+                15分ごとに{WAITING_FEE_PER_15MIN.toLocaleString()}円として計算され、集計・請求書では付帯サービス料金に
+                {waitingFee(dest.waitingMinutes).toLocaleString()}円を加算して扱います。
+              </p>
+            )}
+          </div>
+
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', marginBottom: 2 }}>立替費用</label>
+              <label style={{ display: 'block', marginBottom: 2 }}>立替費用(有料道路代・駐車料金など実費)</label>
               <input
                 type="number"
                 value={dest.advancedExpense}
                 onChange={(e) => updateDest(di, { advancedExpense: e.target.value })}
+                placeholder="例: 有料道路代・駐車料金"
                 style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
               />
+              <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+                有料道路代・駐車料金など、実費でかかった費用はこの欄に入力してください(請求書では「立替費用」列にそのまま計上されます)。
+              </p>
             </div>
             <div style={{ flex: 1 }}>
               <label style={{ display: 'block', marginBottom: 2 }}>院付担当者</label>
@@ -807,11 +839,15 @@ function ResultDetailForm(props: {
                   onChange={(e) => updateDest(di, { ancillaryServiceFeeAmount: e.target.value })}
                   style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
                 />
-                {(dest.inHospitalAccompanimentFlag || inHospitalCareFee(dest.inHospitalCareMinutes) > 0) && (
+                {(dest.inHospitalAccompanimentFlag ||
+                  inHospitalCareFee(dest.inHospitalCareMinutes) > 0 ||
+                  waitingFee(dest.waitingMinutes) > 0) && (
                   <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
                     {dest.inHospitalAccompanimentFlag && '院内付き添いチェックにより+1,650円、'}
                     {inHospitalCareFee(dest.inHospitalCareMinutes) > 0 &&
                       `院内介助時間により+${inHospitalCareFee(dest.inHospitalCareMinutes).toLocaleString()}円、`}
+                    {waitingFee(dest.waitingMinutes) > 0 &&
+                      `待機時間により+${waitingFee(dest.waitingMinutes).toLocaleString()}円、`}
                     集計・請求書ではこの金額に加算して扱います。
                   </p>
                 )}

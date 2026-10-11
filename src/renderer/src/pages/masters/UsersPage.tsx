@@ -64,6 +64,7 @@ const emptyUser: NewUser = {
   careManager: null,
   contractDate: null,
   isContractor: false,
+  kaisouFeeFlag: false,
   remarks: null
 }
 
@@ -176,6 +177,7 @@ function UserDetail(props: {
         careManager: u.careManager,
         contractDate: u.contractDate,
         isContractor: u.isContractor,
+        kaisouFeeFlag: u.kaisouFeeFlag,
         remarks: u.remarks
       })
     })
@@ -326,6 +328,21 @@ function UserDetail(props: {
               />{' '}
               生活保護
             </label>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.kaisouFeeFlag}
+                onChange={(e) => update('kaisouFeeFlag', e.target.checked)}
+              />{' '}
+              回送料金(事務所から6km超)
+            </label>
+            {form.kaisouFeeFlag && (
+              <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+                チェックすると、この利用者の搬送実績1件につき700円を集計・請求書で自動加算して扱います。
+              </p>
+            )}
           </div>
           <Field
             label="備考"

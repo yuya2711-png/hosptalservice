@@ -37,15 +37,22 @@ const IN_HOSPITAL_ACCOMPANIMENT_FEE = 1650
 // 院内介助の料金(円/60分、くろふねの車両を利用した場合)。60分未満も1区分として扱う。
 const IN_HOSPITAL_CARE_FEE_PER_60MIN = 3300
 
+// 待機料(円/15分)。15分未満も1区分として扱う。
+const WAITING_FEE_PER_15MIN = 500
+
 // 搬送先ごとの付帯サービス料金(円)。
 // ・院内付き添いチェック時は固定で1650円を加算する。
 // ・院内介助時間(分)が入力されている場合、60分単位で切り上げて3,300円/区分を加算する
 //   (料金表の「60分毎3,300円+税」のうち、税額は按分管理しないため含めていない)。
+// ・待機時間(分)が入力されている場合、15分単位で切り上げて500円/区分を加算する。
 const ANCILLARY_SERVICE_FEE_SQL = `(
   COALESCE(rd.AncillaryServiceFeeAmount, 0) +
   CASE WHEN rd.InHospitalAccompanimentFlag = 1 THEN ${IN_HOSPITAL_ACCOMPANIMENT_FEE} ELSE 0 END +
   CASE WHEN rd.InHospitalCareMinutes IS NOT NULL AND rd.InHospitalCareMinutes > 0
        THEN ((rd.InHospitalCareMinutes + 59) / 60) * ${IN_HOSPITAL_CARE_FEE_PER_60MIN}
+       ELSE 0 END +
+  CASE WHEN rd.WaitingMinutes IS NOT NULL AND rd.WaitingMinutes > 0
+       THEN ((rd.WaitingMinutes + 14) / 15) * ${WAITING_FEE_PER_15MIN}
        ELSE 0 END
 )`
 
@@ -63,9 +70,16 @@ const DESTINATION_FEE_SUM_SQL = `(
 // タクシー券1枚あたりの換算額
 const TAXI_TICKET_UNIT_PRICE = 450
 
-// 実績単位(ResultId基準)の加減算: キャンセル料金を加算し、タクシー券(枚数×450円)を減算する
+// 回送料金(円)。利用者マスタのKaisouFeeFlag(事務所から6km超)がONの利用者について、
+// 搬送実績1件ごとに固定で加算する。距離は利用者の自宅位置でほぼ固定のため利用者単位で判定する。
+const RELOCATION_FEE_AMOUNT = 700
+const RELOCATION_FEE_SQL = `(
+  (SELECT COALESCE(mu.KaisouFeeFlag, 0) FROM M_User mu WHERE mu.UserId = r.UserId) * ${RELOCATION_FEE_AMOUNT}
+)`
+
+// 実績単位(ResultId基準)の加減算: キャンセル料金・回送料金を加算し、タクシー券(枚数×450円)を減算する
 const RESULT_LEVEL_ADJUSTMENT_SQL = `(
-  COALESCE(r.CancellationFeeAmount, 0) - COALESCE(r.TaxiTicketCount, 0) * ${TAXI_TICKET_UNIT_PRICE}
+  COALESCE(r.CancellationFeeAmount, 0) - COALESCE(r.TaxiTicketCount, 0) * ${TAXI_TICKET_UNIT_PRICE} + ${RELOCATION_FEE_SQL}
 )`
 
 // 指定月の搬送実績を利用者ごとに集計する。国保連請求分とそれ以外(自費等)を分けて合計する。
@@ -241,6 +255,14 @@ export function getInvoiceData(yearMonth: string, userId: number): InvoiceData {
     )
     .get(userId, from, to) as unknown as { total: number }
 
+  const relocationFeeRow = db
+    .prepare(
+      `SELECT COUNT(*) * (SELECT COALESCE(KaisouFeeFlag, 0) FROM M_User WHERE UserId = ?) * ${RELOCATION_FEE_AMOUNT} AS total
+       FROM T_TransportResult
+       WHERE UserId = ? AND TransportDate >= ? AND TransportDate < ?`
+    )
+    .get(userId, userId, from, to) as unknown as { total: number }
+
   return {
     userId: user.UserId,
     userName: user.Name,
@@ -249,6 +271,7 @@ export function getInvoiceData(yearMonth: string, userId: number): InvoiceData {
     yearMonth,
     lineItems,
     cancellationFeeTotal: cancellationRow.total,
-    taxiTicketTotal: taxiTicketRow.total
+    taxiTicketTotal: taxiTicketRow.total,
+    relocationFeeTotal: relocationFeeRow.total
   }
 }

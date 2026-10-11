@@ -23,6 +23,7 @@ interface UserRow {
   CareManager: string | null
   ContractDate: string | null
   IsContractor: number
+  KaisouFeeFlag: number
   Remarks: string | null
   IsDeleted: number
   CreatedAt: string
@@ -46,6 +47,7 @@ function mapUserRow(row: UserRow): User {
     careManager: row.CareManager,
     contractDate: row.ContractDate,
     isContractor: row.IsContractor === 1,
+    kaisouFeeFlag: row.KaisouFeeFlag === 1,
     remarks: row.Remarks,
     isDeleted: row.IsDeleted === 1,
     createdAt: row.CreatedAt,
@@ -86,8 +88,8 @@ export function createUser(input: NewUser): User {
       `INSERT INTO M_User (
         Name, NameKana, Sex, BirthDate, PostalCode, Address, PhoneNumber,
         TransactionStatus, LivelihoodProtectionFlag, SpecialTransportCategory,
-        WheelchairFlag, CareManager, ContractDate, IsContractor, Remarks, CreatedBy, UpdatedBy
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        WheelchairFlag, CareManager, ContractDate, IsContractor, KaisouFeeFlag, Remarks, CreatedBy, UpdatedBy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.name,
@@ -104,6 +106,7 @@ export function createUser(input: NewUser): User {
       input.careManager ?? null,
       input.contractDate ?? null,
       input.isContractor ? 1 : 0,
+      input.kaisouFeeFlag ? 1 : 0,
       input.remarks ?? null,
       operator,
       operator
@@ -150,6 +153,8 @@ export function updateUser(id: number, input: Partial<NewUser>): User {
     contractDate: input.contractDate !== undefined ? input.contractDate : current.ContractDate,
     isContractor:
       input.isContractor !== undefined ? (input.isContractor ? 1 : 0) : current.IsContractor,
+    kaisouFeeFlag:
+      input.kaisouFeeFlag !== undefined ? (input.kaisouFeeFlag ? 1 : 0) : current.KaisouFeeFlag,
     remarks: input.remarks !== undefined ? input.remarks : current.Remarks
   }
 
@@ -157,7 +162,7 @@ export function updateUser(id: number, input: Partial<NewUser>): User {
     `UPDATE M_User SET
       Name = ?, NameKana = ?, Sex = ?, BirthDate = ?, PostalCode = ?, Address = ?, PhoneNumber = ?,
       TransactionStatus = ?, LivelihoodProtectionFlag = ?, SpecialTransportCategory = ?,
-      WheelchairFlag = ?, CareManager = ?, ContractDate = ?, IsContractor = ?, Remarks = ?,
+      WheelchairFlag = ?, CareManager = ?, ContractDate = ?, IsContractor = ?, KaisouFeeFlag = ?, Remarks = ?,
       UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
      WHERE UserId = ?`
   ).run(
@@ -175,6 +180,7 @@ export function updateUser(id: number, input: Partial<NewUser>): User {
     m.careManager,
     m.contractDate,
     m.isContractor,
+    m.kaisouFeeFlag,
     m.remarks,
     getCurrentOperator(),
     id

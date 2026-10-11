@@ -36,6 +36,7 @@ interface ResultDestinationRow {
   PhysicalCareFlag: number
   InHospitalCareFlag: number
   InHospitalCareMinutes: number | null
+  WaitingMinutes: number | null
   DialysisFlag: number
   AdvancedExpense: number | null
   HospitalStaffName: string | null
@@ -109,6 +110,7 @@ function mapDestinationRow(row: ResultDestinationRow): Omit<ResultDestinationDet
     physicalCareFlag: row.PhysicalCareFlag === 1,
     inHospitalCareFlag: row.InHospitalCareFlag === 1,
     inHospitalCareMinutes: row.InHospitalCareMinutes,
+    waitingMinutes: row.WaitingMinutes,
     dialysisFlag: row.DialysisFlag === 1,
     advancedExpense: row.AdvancedExpense,
     hospitalStaffName: row.HospitalStaffName,
@@ -232,8 +234,8 @@ function insertDestinationsAndLegs(
   const db = getDb()
   const destStmt = db.prepare(
     `INSERT INTO T_ResultDestination
-      (ResultId, SeqNo, DestinationId, DepartmentId, PhysicalCareFlag, InHospitalCareFlag, InHospitalCareMinutes, DialysisFlag, AdvancedExpense, HospitalStaffName, CalculatedFee, BaseCareFeeAmount, PhysicalCareFeeAmount, AncillaryServiceFeeAmount, SpecialFeeAmount, SpecialTransportCategory, InHospitalAccompanimentFlag)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      (ResultId, SeqNo, DestinationId, DepartmentId, PhysicalCareFlag, InHospitalCareFlag, InHospitalCareMinutes, WaitingMinutes, DialysisFlag, AdvancedExpense, HospitalStaffName, CalculatedFee, BaseCareFeeAmount, PhysicalCareFeeAmount, AncillaryServiceFeeAmount, SpecialFeeAmount, SpecialTransportCategory, InHospitalAccompanimentFlag)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
   const legStmt = db.prepare(
     `INSERT INTO T_ResultLeg
@@ -250,6 +252,7 @@ function insertDestinationsAndLegs(
       dest.physicalCareFlag ? 1 : 0,
       dest.inHospitalCareFlag ? 1 : 0,
       dest.inHospitalCareMinutes ?? null,
+      dest.waitingMinutes ?? null,
       dest.dialysisFlag ? 1 : 0,
       dest.advancedExpense ?? null,
       dest.hospitalStaffName ?? null,
@@ -324,6 +327,7 @@ export function createDraftForRequest(requestId: number): number | null {
       physicalCareFlag: false,
       inHospitalCareFlag: false,
       inHospitalCareMinutes: null,
+      waitingMinutes: null,
       dialysisFlag: false,
       advancedExpense: null,
       hospitalStaffName: null,
