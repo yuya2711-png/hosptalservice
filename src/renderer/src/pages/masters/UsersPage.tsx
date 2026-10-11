@@ -63,6 +63,7 @@ const emptyUser: NewUser = {
   wheelchairFlag: false,
   careManager: null,
   contractDate: null,
+  isContractor: false,
   remarks: null
 }
 
@@ -174,6 +175,7 @@ function UserDetail(props: {
         wheelchairFlag: u.wheelchairFlag,
         careManager: u.careManager,
         contractDate: u.contractDate,
+        isContractor: u.isContractor,
         remarks: u.remarks
       })
     })
@@ -295,6 +297,16 @@ function UserDetail(props: {
             value={form.contractDate ?? ''}
             onChange={(v) => update('contractDate', v || null)}
           />
+          <div style={{ marginBottom: 8 }}>
+            <label>
+              <input
+                type="checkbox"
+                checked={form.isContractor}
+                onChange={(e) => update('isContractor', e.target.checked)}
+              />{' '}
+              契約者
+            </label>
+          </div>
           <div style={{ marginBottom: 8 }}>
             <label>
               <input
@@ -601,8 +613,11 @@ function RecurringTab(props: { userId: number }): ReactElement {
           companionName: companionName || null,
           wheelchairFlag,
           specialTransportFlag,
+          inHospitalAccompanimentFlag: false,
+          driverId: null,
           cancelDate: null,
           cancelReason: null,
+          cancelPaidFlag: false,
           paidFlag,
           remarks: remarks || null
         },

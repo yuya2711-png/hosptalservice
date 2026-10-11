@@ -20,15 +20,52 @@ interface SummaryRow {
   amount: number
 }
 
+// 通院等乗降介助に該当しない脚(往路/復路)1件につき加算する基本乗車料
+const TSUUIN_KAIGO_BASE_FARE = 1500
+
+// 搬送先ごとの介護基本料(円)。各脚(往路/復路、取消済みを除く)のうち
+// 通院等乗降介助に該当しない(チェックなし)ものについて、1,500円を加算する。
+const BASE_CARE_FEE_SQL = `(
+  COALESCE(rd.BaseCareFeeAmount, 0) +
+  (SELECT COALESCE(SUM(CASE WHEN rl.TsuuinKaigoKihonFlag = 0 THEN ${TSUUIN_KAIGO_BASE_FARE} ELSE 0 END), 0)
+   FROM T_ResultLeg rl WHERE rl.ResultDestinationId = rd.ResultDestinationId AND rl.CancelFlag = 0)
+)`
+
+// 院内付き添いチェック時に付帯サービス料金へ加算する金額
+const IN_HOSPITAL_ACCOMPANIMENT_FEE = 1650
+
+// 院内介助の料金(円/60分、くろふねの車両を利用した場合)。60分未満も1区分として扱う。
+const IN_HOSPITAL_CARE_FEE_PER_60MIN = 3300
+
+// 搬送先ごとの付帯サービス料金(円)。
+// ・院内付き添いチェック時は固定で1650円を加算する。
+// ・院内介助時間(分)が入力されている場合、60分単位で切り上げて3,300円/区分を加算する
+//   (料金表の「60分毎3,300円+税」のうち、税額は按分管理しないため含めていない)。
+const ANCILLARY_SERVICE_FEE_SQL = `(
+  COALESCE(rd.AncillaryServiceFeeAmount, 0) +
+  CASE WHEN rd.InHospitalAccompanimentFlag = 1 THEN ${IN_HOSPITAL_ACCOMPANIMENT_FEE} ELSE 0 END +
+  CASE WHEN rd.InHospitalCareMinutes IS NOT NULL AND rd.InHospitalCareMinutes > 0
+       THEN ((rd.InHospitalCareMinutes + 59) / 60) * ${IN_HOSPITAL_CARE_FEE_PER_60MIN}
+       ELSE 0 END
+)`
+
 // 搬送先ごとの各種料金(運送サービス・介護基本・身体介助・付帯サービス・特別自費・立替費用)を
 // 合計するSQL式。実績単位の金額(ResultId基準)として使う。
 const DESTINATION_FEE_SUM_SQL = `(
   SELECT COALESCE(SUM(
-    COALESCE(rd.CalculatedFee, 0) + COALESCE(rd.BaseCareFeeAmount, 0) +
-    COALESCE(rd.PhysicalCareFeeAmount, 0) + COALESCE(rd.AncillaryServiceFeeAmount, 0) +
+    COALESCE(rd.CalculatedFee, 0) + ${BASE_CARE_FEE_SQL} +
+    COALESCE(rd.PhysicalCareFeeAmount, 0) + ${ANCILLARY_SERVICE_FEE_SQL} +
     COALESCE(rd.SpecialFeeAmount, 0) + COALESCE(rd.AdvancedExpense, 0)
   ), 0)
   FROM T_ResultDestination rd WHERE rd.ResultId = r.ResultId
+)`
+
+// タクシー券1枚あたりの換算額
+const TAXI_TICKET_UNIT_PRICE = 450
+
+// 実績単位(ResultId基準)の加減算: キャンセル料金を加算し、タクシー券(枚数×450円)を減算する
+const RESULT_LEVEL_ADJUSTMENT_SQL = `(
+  COALESCE(r.CancellationFeeAmount, 0) - COALESCE(r.TaxiTicketCount, 0) * ${TAXI_TICKET_UNIT_PRICE}
 )`
 
 // 指定月の搬送実績を利用者ごとに集計する。国保連請求分とそれ以外(自費等)を分けて合計する。
@@ -40,7 +77,7 @@ export function getMonthlyBillingSummary(yearMonth: string): BillingSummaryItem[
         r.UserId AS userId,
         u.Name AS userName,
         r.KokuhorenClaimFlag AS kokuhorenClaimFlag,
-        ${DESTINATION_FEE_SUM_SQL} + COALESCE(r.CancellationFeeAmount, 0) AS amount
+        ${DESTINATION_FEE_SUM_SQL} + ${RESULT_LEVEL_ADJUSTMENT_SQL} AS amount
        FROM T_TransportResult r
        JOIN M_User u ON u.UserId = r.UserId
        WHERE r.TransportDate >= ? AND r.TransportDate < ?`
@@ -95,7 +132,7 @@ export function getMonthlyBillingDetail(yearMonth: string, userId: number): Bill
            JOIN M_Destination d ON d.DestinationId = rd.DestinationId
           WHERE rd.ResultId = r.ResultId
           ORDER BY rd.SeqNo) AS destinationNames,
-        ${DESTINATION_FEE_SUM_SQL} + COALESCE(r.CancellationFeeAmount, 0) AS amount
+        ${DESTINATION_FEE_SUM_SQL} + ${RESULT_LEVEL_ADJUSTMENT_SQL} AS amount
        FROM T_TransportResult r
        WHERE r.UserId = ? AND r.TransportDate >= ? AND r.TransportDate < ?
        ORDER BY r.TransportDate`
@@ -158,9 +195,9 @@ export function getInvoiceData(yearMonth: string, userId: number): InvoiceData {
         leg.DepartureTime AS departureTime,
         leg.ArrivalTime AS arrivalTime,
         rd.CalculatedFee AS transportFee,
-        rd.BaseCareFeeAmount AS baseCareFee,
+        ${BASE_CARE_FEE_SQL} AS baseCareFee,
         rd.PhysicalCareFeeAmount AS physicalCareFee,
-        rd.AncillaryServiceFeeAmount AS ancillaryServiceFee,
+        ${ANCILLARY_SERVICE_FEE_SQL} AS ancillaryServiceFee,
         rd.SpecialFeeAmount AS specialFee,
         rd.AdvancedExpense AS advancedExpense
        FROM T_TransportResult r
@@ -196,6 +233,14 @@ export function getInvoiceData(yearMonth: string, userId: number): InvoiceData {
     )
     .get(userId, from, to) as unknown as { total: number }
 
+  const taxiTicketRow = db
+    .prepare(
+      `SELECT COALESCE(SUM(TaxiTicketCount), 0) * ${TAXI_TICKET_UNIT_PRICE} AS total
+       FROM T_TransportResult
+       WHERE UserId = ? AND TransportDate >= ? AND TransportDate < ?`
+    )
+    .get(userId, from, to) as unknown as { total: number }
+
   return {
     userId: user.UserId,
     userName: user.Name,
@@ -203,6 +248,7 @@ export function getInvoiceData(yearMonth: string, userId: number): InvoiceData {
     userPostalCode: user.PostalCode,
     yearMonth,
     lineItems,
-    cancellationFeeTotal: cancellationRow.total
+    cancellationFeeTotal: cancellationRow.total,
+    taxiTicketTotal: taxiTicketRow.total
   }
 }

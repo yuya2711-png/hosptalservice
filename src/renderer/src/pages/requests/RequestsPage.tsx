@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react'
 import type {
   Department,
   Destination,
+  Driver,
   NewRequestDestination,
   NewTransportRequestInput,
   RecurringDayPattern,
@@ -12,6 +13,8 @@ import type {
 } from '@shared/types/entities'
 
 const WEEKDAY_LABELS = ['日', '月', '火', '水', '木', '金', '土']
+
+const REQUESTER_OPTIONS = ['ケアマネ', '本人', '家族', '担会', 'その他']
 
 interface DayPatternForm {
   enabled: boolean
@@ -51,6 +54,7 @@ export function RequestsPage(props: { openRequest?: OpenRequestRequest }): React
   const [departments, setDepartments] = useState<Department[]>([])
   const [destinationsMaster, setDestinationsMaster] = useState<Destination[]>([])
   const [usersMaster, setUsersMaster] = useState<User[]>([])
+  const [driversMaster, setDriversMaster] = useState<Driver[]>([])
 
   async function reloadList(): Promise<void> {
     const rows = await window.api.requests.list({
@@ -70,6 +74,7 @@ export function RequestsPage(props: { openRequest?: OpenRequestRequest }): React
     window.api.departments.list().then(setDepartments)
     window.api.destinations.list().then(setDestinationsMaster)
     window.api.users.list().then(setUsersMaster)
+    window.api.drivers.list().then(setDriversMaster)
   }, [])
 
   useEffect(() => {
@@ -158,6 +163,7 @@ export function RequestsPage(props: { openRequest?: OpenRequestRequest }): React
             departments={departments}
             destinationsMaster={destinationsMaster}
             usersMaster={usersMaster}
+            driversMaster={driversMaster}
             onSaved={async (id) => {
               await reloadList()
               setSelectedId(id)
@@ -203,8 +209,11 @@ interface RequestFormState {
   companionName: string
   wheelchairFlag: boolean
   specialTransportFlag: boolean
+  inHospitalAccompanimentFlag: boolean
+  driverId: number | null
   cancelDate: string
   cancelReason: string
+  cancelPaidFlag: boolean
   paidFlag: boolean
   remarks: string
   destinations: DestForm[]
@@ -223,8 +232,11 @@ function emptyForm(defaultTransportDate?: string): RequestFormState {
     companionName: '',
     wheelchairFlag: false,
     specialTransportFlag: false,
+    inHospitalAccompanimentFlag: false,
+    driverId: null,
     cancelDate: '',
     cancelReason: '',
+    cancelPaidFlag: false,
     paidFlag: true,
     remarks: '',
     destinations: [{ ...emptyDestination }]
@@ -245,8 +257,11 @@ function detailToForm(detail: TransportRequestDetail): RequestFormState {
     companionName: request.companionName ?? '',
     wheelchairFlag: request.wheelchairFlag,
     specialTransportFlag: request.specialTransportFlag,
+    inHospitalAccompanimentFlag: request.inHospitalAccompanimentFlag,
+    driverId: request.driverId,
     cancelDate: request.cancelDate ?? '',
     cancelReason: request.cancelReason ?? '',
+    cancelPaidFlag: request.cancelPaidFlag,
     paidFlag: request.paidFlag,
     remarks: request.remarks ?? '',
     destinations:
@@ -268,6 +283,7 @@ function RequestDetail(props: {
   departments: Department[]
   destinationsMaster: Destination[]
   usersMaster: User[]
+  driversMaster: Driver[]
   onSaved: (id: number) => void
   onDeleted: () => void
 }): ReactElement {
@@ -277,6 +293,7 @@ function RequestDetail(props: {
     departments,
     destinationsMaster,
     usersMaster,
+    driversMaster,
     onSaved,
     onDeleted
   } = props
@@ -392,8 +409,11 @@ function RequestDetail(props: {
       companionName: form.companionName || null,
       wheelchairFlag: form.wheelchairFlag,
       specialTransportFlag: form.specialTransportFlag,
+      inHospitalAccompanimentFlag: form.inHospitalAccompanimentFlag,
+      driverId: form.driverId,
       cancelDate: form.cancelDate || null,
       cancelReason: form.cancelReason || null,
+      cancelPaidFlag: form.cancelPaidFlag,
       paidFlag: form.paidFlag,
       remarks: form.remarks || null
     }
@@ -558,11 +578,24 @@ function RequestDetail(props: {
           )}
         </div>
 
-        <Field
-          label="依頼者"
-          value={form.requestedBy}
-          onChange={(v) => update('requestedBy', v)}
-        />
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ display: 'block', marginBottom: 2 }}>依頼者</label>
+          <select
+            value={form.requestedBy}
+            onChange={(e) => update('requestedBy', e.target.value)}
+            style={{ padding: 6, width: '100%' }}
+          >
+            <option value="">選択してください</option>
+            {REQUESTER_OPTIONS.map((opt) => (
+              <option key={opt} value={opt}>
+                {opt}
+              </option>
+            ))}
+            {form.requestedBy && !REQUESTER_OPTIONS.includes(form.requestedBy) && (
+              <option value={form.requestedBy}>{form.requestedBy}</option>
+            )}
+          </select>
+        </div>
 
         {requestId === 'new' && (
           <div style={{ marginBottom: 8 }}>
@@ -805,11 +838,36 @@ function RequestDetail(props: {
               />{' '}
               提供票
             </label>
+            <label style={{ display: 'block', marginBottom: 8 }}>
+              <input
+                type="checkbox"
+                checked={form.inHospitalAccompanimentFlag}
+                onChange={(e) => update('inHospitalAccompanimentFlag', e.target.checked)}
+              />{' '}
+              院内付き添い
+            </label>
             <Field
               label="同乗者"
               value={form.companionName}
               onChange={(v) => update('companionName', v)}
             />
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ display: 'block', marginBottom: 2 }}>運転手</label>
+              <select
+                value={form.driverId ?? ''}
+                onChange={(e) =>
+                  update('driverId', e.target.value ? Number(e.target.value) : null)
+                }
+                style={{ padding: 6, width: '100%' }}
+              >
+                <option value="">未割当</option>
+                {driversMaster.map((d) => (
+                  <option key={d.driverId} value={d.driverId}>
+                    {d.name}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         )}
       </fieldset>
@@ -832,6 +890,32 @@ function RequestDetail(props: {
               value={form.cancelReason}
               onChange={(v) => update('cancelReason', v)}
             />
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ display: 'block', marginBottom: 2 }}>キャンセル料</label>
+              <label style={{ marginRight: 12 }}>
+                <input
+                  type="radio"
+                  name="cancelPaidFlag"
+                  checked={!form.cancelPaidFlag}
+                  onChange={() => update('cancelPaidFlag', false)}
+                />{' '}
+                無償
+              </label>
+              <label style={{ marginRight: 12 }}>
+                <input
+                  type="radio"
+                  name="cancelPaidFlag"
+                  checked={form.cancelPaidFlag}
+                  onChange={() => update('cancelPaidFlag', true)}
+                />{' '}
+                有償
+              </label>
+              {form.cancelPaidFlag && (
+                <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+                  有償キャンセルの料金額は未確定のため、現在は金額の計算・記録には対応していません(要対応事項として記録済み)。
+                </p>
+              )}
+            </div>
           </div>
         )}
       </fieldset>

@@ -24,8 +24,8 @@ export function SpecialTransportRatesPage(): ReactElement {
     <div style={{ padding: 16 }}>
       <h2>特別搬送料金</h2>
       <p style={{ fontSize: 12, color: '#888', maxWidth: 640 }}>
-        利用者マスタの「特別搬送区分」に応じた固定額です。区分名は利用者マスタの入力内容と一致させてください。
-        <strong>現在登録されている金額は暫定値です。</strong>正式な金額が決まり次第、ここから更新してください。
+        利用者マスタの「特別搬送区分」、または搬送実績の「特別搬送区分」欄に応じた固定額です。区分名は一致させてください。
+        階段の段数・移動距離に基づく料金表(福祉有償運送)の正式値を登録しています。金額を変更する場合はここから更新してください。
       </p>
       <button onClick={() => setSelectedId('new')} style={{ marginBottom: 12 }}>
         + 新規登録

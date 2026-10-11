@@ -71,7 +71,11 @@ export function buildInvoiceHtml(data: InvoiceData, adjustments: InvoiceAdjustme
     advancedExpenseTotal +
     data.cancellationFeeTotal
   const billedAmount =
-    salesTotal + adjustments.taxAmount - adjustments.discountAmount - adjustments.taxiTicketOffsetAmount
+    salesTotal +
+    adjustments.taxAmount -
+    adjustments.discountAmount -
+    adjustments.taxiTicketOffsetAmount -
+    data.taxiTicketTotal
 
   const rows = data.lineItems
     .map(
@@ -160,6 +164,7 @@ export function buildInvoiceHtml(data: InvoiceData, adjustments: InvoiceAdjustme
     <div class="summary-cell"><div class="label">外税</div><div class="value">${yen(adjustments.taxAmount)}</div></div>
     <div class="summary-cell"><div class="label">値引</div><div class="value">${yen(adjustments.discountAmount)}</div></div>
     <div class="summary-cell"><div class="label">タクシー券相殺額</div><div class="value">${yen(adjustments.taxiTicketOffsetAmount)}</div></div>
+    <div class="summary-cell"><div class="label">タクシー券(自動計算)</div><div class="value">${yen(data.taxiTicketTotal)}</div></div>
     <div class="summary-cell highlight"><div class="label">ご請求金額</div><div class="value">${yen(billedAmount)}</div></div>
   </div>
 </body>

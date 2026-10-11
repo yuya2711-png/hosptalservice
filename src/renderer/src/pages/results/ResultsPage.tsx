@@ -33,6 +33,7 @@ export function ResultsPage(): ReactElement {
   const [items, setItems] = useState<RequestResultStatusItem[]>([])
   const [selectedResultId, setSelectedResultId] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [draftResultMessage, setDraftResultMessage] = useState<string | null>(null)
 
   const [departments, setDepartments] = useState<Department[]>([])
   const [destinationsMaster, setDestinationsMaster] = useState<Destination[]>([])
@@ -46,6 +47,7 @@ export function ResultsPage(): ReactElement {
   useEffect(() => {
     reload()
     setSelectedResultId(null)
+    setDraftResultMessage(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date])
 
@@ -57,10 +59,14 @@ export function ResultsPage(): ReactElement {
 
   async function handleBulkDraft(): Promise<void> {
     setBusy(true)
+    setDraftResultMessage(null)
     try {
       const result = await window.api.results.createDraftsForDate(date)
       await reload()
-      window.alert(`下書きを${result.created}件作成しました(既存${result.skipped}件はスキップ)`)
+      // window.alert()はElectronではOSのネイティブダイアログになり、閉じた直後にウィンドウの
+      // フォーカスが不安定になって<input type="date">のカレンダーが開かなくなることがあるため、
+      // 画面内にメッセージを表示するだけにする(ブロッキングしない)。
+      setDraftResultMessage(`下書きを${result.created}件作成しました(既存${result.skipped}件はスキップ)`)
     } finally {
       setBusy(false)
     }
@@ -88,6 +94,9 @@ export function ResultsPage(): ReactElement {
         <button onClick={handleBulkDraft} disabled={busy} style={{ marginBottom: 12 }}>
           この日の下書きをまとめて作成
         </button>
+        {draftResultMessage && (
+          <p style={{ fontSize: 12, color: '#2e7d46', margin: '0 0 12px' }}>{draftResultMessage}</p>
+        )}
 
         {items.length === 0 && <p style={{ color: '#888' }}>この日の搬送依頼はありません。</p>}
         <ul style={{ listStyle: 'none', padding: 0 }}>
@@ -161,6 +170,8 @@ interface LegForm {
   driverId: number | null
   distanceKm: string
   cancelFlag: boolean
+  // 通院等乗降介助に該当するか。falseの場合、介護基本料に基本乗車料1,500円を自動加算する
+  tsuuinKaigoKihonFlag: boolean
 }
 
 function emptyLeg(): LegForm {
@@ -173,16 +184,17 @@ function emptyLeg(): LegForm {
     vehicleNo: '',
     driverId: null,
     distanceKm: '',
-    cancelFlag: false
+    cancelFlag: false,
+    tsuuinKaigoKihonFlag: true
   }
 }
 
 interface ResultDestForm {
   destinationId: number | null
   departmentId: number | null
-  tsuuinKaigoKihonFlag: boolean
   physicalCareFlag: boolean
   inHospitalCareFlag: boolean
+  inHospitalCareMinutes: string
   dialysisFlag: boolean
   advancedExpense: string
   hospitalStaffName: string
@@ -192,10 +204,39 @@ interface ResultDestForm {
   ancillaryServiceFeeAmount: string
   specialFeeAmount: string
   specialTransportCategory: string
+  inHospitalAccompanimentFlag: boolean
   legs: LegForm[]
 }
 
 const SERVICE_PRICE_CATEGORY = '福祉有償運送'
+
+// 院内介助の料金(円/60分、くろふねの車両を利用した場合)。billingRepository.tsの計算式と揃えること。
+const IN_HOSPITAL_CARE_FEE_PER_60MIN = 3300
+
+function inHospitalCareFee(minutesStr: string): number {
+  const minutes = Number(minutesStr)
+  if (!minutesStr || !Number.isFinite(minutes) || minutes <= 0) return 0
+  return Math.ceil(minutes / 60) * IN_HOSPITAL_CARE_FEE_PER_60MIN
+}
+
+// 通院等乗降介助に該当しない脚(往路/復路、取消済みを除く)1件につき加算する基本乗車料。
+// billingRepository.tsのTSUUIN_KAIGO_BASE_FAREと揃えること。
+const TSUUIN_KAIGO_BASE_FARE = 1500
+
+function tsuuinKaigoAddOn(legs: LegForm[]): number {
+  return legs
+    .filter((leg) => !leg.cancelFlag && !leg.tsuuinKaigoKihonFlag)
+    .reduce((sum) => sum + TSUUIN_KAIGO_BASE_FARE, 0)
+}
+
+// タクシー券1枚あたりの換算額。billingRepository.tsのTAXI_TICKET_UNIT_PRICEと揃えること。
+const TAXI_TICKET_UNIT_PRICE = 450
+
+function taxiTicketDiscount(countStr: string): number {
+  const count = Number(countStr)
+  if (!countStr || !Number.isFinite(count) || count <= 0) return 0
+  return count * TAXI_TICKET_UNIT_PRICE
+}
 
 function parseTimeToMinutes(t: string): number | null {
   const m = /^(\d{2}):(\d{2})$/.exec(t)
@@ -227,6 +268,7 @@ interface ResultFormState {
   snapshotCareLevel: string
   snapshotBenefitRate: string
   cancellationFeeAmount: string
+  taxiTicketCount: string
   remarks: string
   destinations: ResultDestForm[]
 }
@@ -239,13 +281,14 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
       detail.result.snapshotBenefitRate !== null ? String(detail.result.snapshotBenefitRate) : '',
     cancellationFeeAmount:
       detail.result.cancellationFeeAmount !== null ? String(detail.result.cancellationFeeAmount) : '',
+    taxiTicketCount: detail.result.taxiTicketCount !== null ? String(detail.result.taxiTicketCount) : '',
     remarks: detail.result.remarks ?? '',
     destinations: detail.destinations.map((d) => ({
       destinationId: d.destinationId,
       departmentId: d.departmentId,
-      tsuuinKaigoKihonFlag: d.tsuuinKaigoKihonFlag,
       physicalCareFlag: d.physicalCareFlag,
       inHospitalCareFlag: d.inHospitalCareFlag,
+      inHospitalCareMinutes: d.inHospitalCareMinutes !== null ? String(d.inHospitalCareMinutes) : '',
       dialysisFlag: d.dialysisFlag,
       advancedExpense: d.advancedExpense !== null ? String(d.advancedExpense) : '',
       hospitalStaffName: d.hospitalStaffName ?? '',
@@ -256,6 +299,7 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
         d.ancillaryServiceFeeAmount !== null ? String(d.ancillaryServiceFeeAmount) : '',
       specialFeeAmount: d.specialFeeAmount !== null ? String(d.specialFeeAmount) : '',
       specialTransportCategory: d.specialTransportCategory ?? '',
+      inHospitalAccompanimentFlag: d.inHospitalAccompanimentFlag,
       legs: [...d.legs]
         .sort((a, b) => a.legType - b.legType)
         .map((leg) => ({
@@ -267,7 +311,8 @@ function detailToForm(detail: TransportResultDetail): ResultFormState {
           vehicleNo: leg.vehicleNo ?? '',
           driverId: leg.driverId,
           distanceKm: leg.distanceKm !== null ? String(leg.distanceKm) : '',
-          cancelFlag: leg.cancelFlag
+          cancelFlag: leg.cancelFlag,
+          tsuuinKaigoKihonFlag: leg.tsuuinKaigoKihonFlag
         }))
     }))
   }
@@ -286,7 +331,9 @@ function ResultDetailForm(props: {
   const [transportDate, setTransportDate] = useState('')
   const [userId, setUserId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [specialCategories, setSpecialCategories] = useState<string[]>([])
+  const [specialCategories, setSpecialCategories] = useState<{ category: string; amount: number }[]>(
+    []
+  )
 
   useEffect(() => {
     window.api.results.get(resultId).then((detail) => {
@@ -300,7 +347,15 @@ function ResultDetailForm(props: {
 
   useEffect(() => {
     window.api.specialTransportRates.list().then((rates) => {
-      setSpecialCategories([...new Set(rates.map((r) => r.category))])
+      // listはCategory, EffectiveFrom DESC順なので、区分ごとに最初に現れる行が最新の適用額になる
+      const seen = new Set<string>()
+      const latestByCategory: { category: string; amount: number }[] = []
+      for (const r of rates) {
+        if (seen.has(r.category)) continue
+        seen.add(r.category)
+        latestByCategory.push({ category: r.category, amount: r.amount })
+      }
+      setSpecialCategories(latestByCategory)
     })
   }, [])
 
@@ -405,15 +460,19 @@ function ResultDetailForm(props: {
 
   async function save(): Promise<void> {
     if (!form) return
+    if (!transportDate) {
+      setError('搬送日を入力してください')
+      return
+    }
     const destinations: NewResultDestination[] = []
     for (const d of form.destinations) {
       if (d.destinationId === null) continue
       destinations.push({
         destinationId: d.destinationId,
         departmentId: d.departmentId,
-        tsuuinKaigoKihonFlag: d.tsuuinKaigoKihonFlag,
         physicalCareFlag: d.physicalCareFlag,
         inHospitalCareFlag: d.inHospitalCareFlag,
+        inHospitalCareMinutes: d.inHospitalCareMinutes !== '' ? Number(d.inHospitalCareMinutes) : null,
         dialysisFlag: d.dialysisFlag,
         advancedExpense: d.advancedExpense !== '' ? Number(d.advancedExpense) : null,
         hospitalStaffName: d.hospitalStaffName || null,
@@ -424,6 +483,7 @@ function ResultDetailForm(props: {
           d.ancillaryServiceFeeAmount !== '' ? Number(d.ancillaryServiceFeeAmount) : null,
         specialFeeAmount: d.specialFeeAmount !== '' ? Number(d.specialFeeAmount) : null,
         specialTransportCategory: d.specialTransportCategory || null,
+        inHospitalAccompanimentFlag: d.inHospitalAccompanimentFlag,
         legs: d.legs.map((leg, li) => ({
           legType: li === 0 ? 1 : 2,
           departureLocation: leg.departureLocation || null,
@@ -434,7 +494,8 @@ function ResultDetailForm(props: {
           vehicleNo: leg.vehicleNo || null,
           driverId: leg.driverId,
           distanceKm: leg.distanceKm !== '' ? Number(leg.distanceKm) : null,
-          cancelFlag: leg.cancelFlag
+          cancelFlag: leg.cancelFlag,
+          tsuuinKaigoKihonFlag: leg.tsuuinKaigoKihonFlag
         }))
       })
     }
@@ -445,11 +506,13 @@ function ResultDetailForm(props: {
 
     const input: NewTransportResultInput = {
       result: {
+        transportDate,
         kokuhorenClaimFlag: form.kokuhorenClaimFlag,
         snapshotCareLevel: form.snapshotCareLevel || null,
         snapshotBenefitRate: form.snapshotBenefitRate !== '' ? Number(form.snapshotBenefitRate) : null,
         cancellationFeeAmount:
           form.cancellationFeeAmount !== '' ? Number(form.cancellationFeeAmount) : null,
+        taxiTicketCount: form.taxiTicketCount !== '' ? Number(form.taxiTicketCount) : null,
         remarks: form.remarks || null
       },
       destinations
@@ -477,6 +540,15 @@ function ResultDetailForm(props: {
 
       <fieldset style={{ marginBottom: 12 }}>
         <legend>基本情報</legend>
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ display: 'block', marginBottom: 2 }}>搬送日</label>
+          <input
+            type="date"
+            value={transportDate}
+            onChange={(e) => setTransportDate(e.target.value)}
+            style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
+          />
+        </div>
         <label style={{ display: 'block', marginBottom: 8 }}>
           <input
             type="checkbox"
@@ -514,6 +586,21 @@ function ResultDetailForm(props: {
               style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
             />
           </div>
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <label style={{ display: 'block', marginBottom: 2 }}>タクシー券(枚)</label>
+          <input
+            type="number"
+            value={form.taxiTicketCount}
+            onChange={(e) => update('taxiTicketCount', e.target.value)}
+            style={{ padding: 6, width: 160, boxSizing: 'border-box' }}
+          />
+          {taxiTicketDiscount(form.taxiTicketCount) > 0 && (
+            <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+              タクシー券{form.taxiTicketCount}枚 × {TAXI_TICKET_UNIT_PRICE}円 =
+              {taxiTicketDiscount(form.taxiTicketCount).toLocaleString()}円を、集計・請求書では全体の金額から差し引いて扱います。
+            </p>
+          )}
         </div>
         <label style={{ display: 'block', marginBottom: 2 }}>備考</label>
         <input
@@ -572,14 +659,6 @@ function ResultDetailForm(props: {
             <label style={{ marginRight: 12 }}>
               <input
                 type="checkbox"
-                checked={dest.tsuuinKaigoKihonFlag}
-                onChange={(e) => updateDest(di, { tsuuinKaigoKihonFlag: e.target.checked })}
-              />{' '}
-              通院等乗降介助
-            </label>
-            <label style={{ marginRight: 12 }}>
-              <input
-                type="checkbox"
                 checked={dest.physicalCareFlag}
                 onChange={(e) => updateDest(di, { physicalCareFlag: e.target.checked })}
               />{' '}
@@ -601,6 +680,32 @@ function ResultDetailForm(props: {
               />{' '}
               透析
             </label>
+            <label style={{ marginRight: 12 }}>
+              <input
+                type="checkbox"
+                checked={dest.inHospitalAccompanimentFlag}
+                onChange={(e) =>
+                  updateDest(di, { inHospitalAccompanimentFlag: e.target.checked })
+                }
+              />{' '}
+              院内付き添い
+            </label>
+          </div>
+
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ display: 'block', marginBottom: 2 }}>院内介助時間(分)</label>
+            <input
+              type="number"
+              value={dest.inHospitalCareMinutes}
+              onChange={(e) => updateDest(di, { inHospitalCareMinutes: e.target.value })}
+              style={{ padding: 6, width: 160, boxSizing: 'border-box' }}
+            />
+            {inHospitalCareFee(dest.inHospitalCareMinutes) > 0 && (
+              <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+                60分ごとに{IN_HOSPITAL_CARE_FEE_PER_60MIN.toLocaleString()}円として計算され、集計・請求書では付帯サービス料金に
+                {inHospitalCareFee(dest.inHospitalCareMinutes).toLocaleString()}円を加算して扱います。
+              </p>
+            )}
           </div>
 
           <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
@@ -676,6 +781,12 @@ function ResultDetailForm(props: {
                   onChange={(e) => updateDest(di, { baseCareFeeAmount: e.target.value })}
                   style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
                 />
+                {tsuuinKaigoAddOn(dest.legs) > 0 && (
+                  <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+                    往路/復路のうち通院等乗降介助に該当しないものがあるため、集計・請求書ではこの金額に基本乗車料
+                    {tsuuinKaigoAddOn(dest.legs).toLocaleString()}円を加算して扱います。
+                  </p>
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', marginBottom: 2 }}>身体介助(円)</label>
@@ -696,6 +807,14 @@ function ResultDetailForm(props: {
                   onChange={(e) => updateDest(di, { ancillaryServiceFeeAmount: e.target.value })}
                   style={{ padding: 6, width: '100%', boxSizing: 'border-box' }}
                 />
+                {(dest.inHospitalAccompanimentFlag || inHospitalCareFee(dest.inHospitalCareMinutes) > 0) && (
+                  <p style={{ fontSize: 11, color: '#888', margin: '4px 0 0' }}>
+                    {dest.inHospitalAccompanimentFlag && '院内付き添いチェックにより+1,650円、'}
+                    {inHospitalCareFee(dest.inHospitalCareMinutes) > 0 &&
+                      `院内介助時間により+${inHospitalCareFee(dest.inHospitalCareMinutes).toLocaleString()}円、`}
+                    集計・請求書ではこの金額に加算して扱います。
+                  </p>
+                )}
               </div>
               <div style={{ flex: 1 }}>
                 <label style={{ display: 'block', marginBottom: 2 }}>特別自費(円)</label>
@@ -715,8 +834,8 @@ function ResultDetailForm(props: {
                 >
                   <option value="">(利用者マスタの区分を使用)</option>
                   {specialCategories.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
+                    <option key={c.category} value={c.category}>
+                      {c.category}({c.amount.toLocaleString()}円)
                     </option>
                   ))}
                 </select>
@@ -769,6 +888,14 @@ function LegEditor(props: {
           この{label}を取消
         </label>
       </div>
+      <label style={{ display: 'block', marginBottom: 6 }}>
+        <input
+          type="checkbox"
+          checked={leg.tsuuinKaigoKihonFlag}
+          onChange={(e) => onChange({ tsuuinKaigoKihonFlag: e.target.checked })}
+        />{' '}
+        通院等乗降介助
+      </label>
       <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
         <MiniField
           label="出発地"

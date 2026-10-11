@@ -28,8 +28,11 @@ interface RequestRow {
   CompanionName: string | null
   WheelchairFlag: number
   SpecialTransportFlag: number
+  InHospitalAccompanimentFlag: number
+  DriverId: number | null
   CancelDate: string | null
   CancelReason: string | null
+  CancelPaidFlag: number
   PaidFlag: number
   Remarks: string | null
   CreatedAt: string
@@ -63,8 +66,11 @@ function mapRequestRow(row: RequestRow): TransportRequest {
     companionName: row.CompanionName,
     wheelchairFlag: row.WheelchairFlag === 1,
     specialTransportFlag: row.SpecialTransportFlag === 1,
+    inHospitalAccompanimentFlag: row.InHospitalAccompanimentFlag === 1,
+    driverId: row.DriverId,
     cancelDate: row.CancelDate,
     cancelReason: row.CancelReason,
+    cancelPaidFlag: row.CancelPaidFlag === 1,
     paidFlag: row.PaidFlag === 1,
     remarks: row.Remarks,
     createdAt: row.CreatedAt,
@@ -193,8 +199,8 @@ function insertRequestHeader(
       `INSERT INTO T_TransportRequest (
         ReceivedDate, IsRecurring, UserId, RequestedBy, TransportDate, PickupTime, ReturnPickupTime,
         SuitableVehicle, ServiceTicketFlag, CompanionName, WheelchairFlag,
-        SpecialTransportFlag, CancelDate, CancelReason, PaidFlag, Remarks, CreatedBy, UpdatedBy
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        SpecialTransportFlag, InHospitalAccompanimentFlag, DriverId, CancelDate, CancelReason, CancelPaidFlag, PaidFlag, Remarks, CreatedBy, UpdatedBy
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       input.receivedDate,
@@ -209,8 +215,11 @@ function insertRequestHeader(
       input.companionName ?? null,
       input.wheelchairFlag ? 1 : 0,
       input.specialTransportFlag ? 1 : 0,
+      input.inHospitalAccompanimentFlag ? 1 : 0,
+      input.driverId ?? null,
       input.cancelDate ?? null,
       input.cancelReason ?? null,
+      input.cancelPaidFlag ? 1 : 0,
       input.paidFlag ? 1 : 0,
       input.remarks ?? null,
       operator,
@@ -249,7 +258,7 @@ export function updateRequest(
       `UPDATE T_TransportRequest SET
         ReceivedDate = ?, UserId = ?, RequestedBy = ?, TransportDate = ?, PickupTime = ?, ReturnPickupTime = ?,
         SuitableVehicle = ?, ServiceTicketFlag = ?, CompanionName = ?, WheelchairFlag = ?,
-        SpecialTransportFlag = ?, CancelDate = ?, CancelReason = ?, PaidFlag = ?, Remarks = ?,
+        SpecialTransportFlag = ?, InHospitalAccompanimentFlag = ?, DriverId = ?, CancelDate = ?, CancelReason = ?, CancelPaidFlag = ?, PaidFlag = ?, Remarks = ?,
         UpdatedAt = datetime('now','localtime'), UpdatedBy = ?
        WHERE RequestId = ?`
     ).run(
@@ -264,8 +273,11 @@ export function updateRequest(
       input.request.companionName ?? null,
       input.request.wheelchairFlag ? 1 : 0,
       input.request.specialTransportFlag ? 1 : 0,
+      input.request.inHospitalAccompanimentFlag ? 1 : 0,
+      input.request.driverId ?? null,
       input.request.cancelDate ?? null,
       input.request.cancelReason ?? null,
+      input.request.cancelPaidFlag ? 1 : 0,
       input.request.paidFlag ? 1 : 0,
       input.request.remarks ?? null,
       getCurrentOperator(),

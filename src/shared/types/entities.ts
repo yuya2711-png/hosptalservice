@@ -49,6 +49,8 @@ export interface User {
   wheelchairFlag: boolean
   careManager: string | null
   contractDate: string | null
+  // 契約者かどうか(契約者でない場合は保険が適用できないため)。対象項目は未確定で、現状は記録のみ
+  isContractor: boolean
   remarks: string | null
   isDeleted: boolean
   createdAt: string
@@ -91,8 +93,14 @@ export interface TransportRequest {
   companionName: string | null
   wheelchairFlag: boolean
   specialTransportFlag: boolean
+  // 依頼全体として院内付き添いが必要か(搬送先ごとではなく依頼単位の項目)
+  inHospitalAccompanimentFlag: boolean
+  // 事前に割り当てる運転手(運転手マスタ参照、任意)
+  driverId: number | null
   cancelDate: string | null
   cancelReason: string | null
+  // キャンセルが有償か無償か。有償の場合の料金額は未確定のため未実装(CLAUDE.md参照)
+  cancelPaidFlag: boolean
   paidFlag: boolean
   remarks: string | null
   createdAt: string
@@ -123,7 +131,11 @@ export interface TransportRequestDetail {
 
 export type NewRequestDestination = Pick<
   RequestDestination,
-  'destinationId' | 'departmentId' | 'reason' | 'roundTripFlag' | 'kaigoKihonFlag'
+  | 'destinationId'
+  | 'departmentId'
+  | 'reason'
+  | 'roundTripFlag'
+  | 'kaigoKihonFlag'
 >
 
 export type NewTransportRequest = Pick<
@@ -139,8 +151,11 @@ export type NewTransportRequest = Pick<
   | 'companionName'
   | 'wheelchairFlag'
   | 'specialTransportFlag'
+  | 'inHospitalAccompanimentFlag'
+  | 'driverId'
   | 'cancelDate'
   | 'cancelReason'
+  | 'cancelPaidFlag'
   | 'paidFlag'
   | 'remarks'
 >
@@ -187,6 +202,8 @@ export interface TransportResult {
   snapshotCareLevel: string | null
   snapshotBenefitRate: number | null
   cancellationFeeAmount: number | null
+  // タクシー券の枚数。1枚450円換算で、枚数×450円を実績全体の金額から自動的に差し引く(billingRepository.ts参照)
+  taxiTicketCount: number | null
   remarks: string | null
   createdAt: string
   updatedAt: string
@@ -206,6 +223,10 @@ export interface ResultLeg {
   distanceKm: number | null
   // この脚(往路/復路)だけを取消にする(片道のみキャンセルする運用があるため)
   cancelFlag: boolean
+  // 通院等乗降介助に該当するか(往路/復路それぞれ個別に判定)。
+  // falseの場合、介護基本料に基本乗車料1,500円を自動加算する(billingRepository.ts参照)。
+  // 既存データへの遡及的な金額変化を避けるため、デフォルトはtrue(該当する=追加課金なし)。
+  tsuuinKaigoKihonFlag: boolean
 }
 
 export interface ResultDestination {
@@ -214,9 +235,10 @@ export interface ResultDestination {
   seqNo: number
   destinationId: number
   departmentId: number | null
-  tsuuinKaigoKihonFlag: boolean
   physicalCareFlag: boolean
   inHospitalCareFlag: boolean
+  // 院内介助にかかった時間(分)。60分毎に3,300円を付帯サービス料金に自動加算する(billingRepository.ts参照)
+  inHospitalCareMinutes: number | null
   // 透析通院の実績であることを示すフラグ
   dialysisFlag: boolean
   advancedExpense: number | null
@@ -229,6 +251,8 @@ export interface ResultDestination {
   specialFeeAmount: number | null
   // 利用者マスタの特別搬送区分(認定)が無い利用者でも、実績ごとにスポットで区分を指定できる
   specialTransportCategory: string | null
+  // チェックすると付帯サービス料金に1650円を加算する(集計・請求書で自動加算)
+  inHospitalAccompanimentFlag: boolean
 }
 
 export interface ResultDestinationDetail extends ResultDestination {
@@ -252,15 +276,16 @@ export type NewResultLeg = Pick<
   | 'driverId'
   | 'distanceKm'
   | 'cancelFlag'
+  | 'tsuuinKaigoKihonFlag'
 >
 
 export type NewResultDestination = Pick<
   ResultDestination,
   | 'destinationId'
   | 'departmentId'
-  | 'tsuuinKaigoKihonFlag'
   | 'physicalCareFlag'
   | 'inHospitalCareFlag'
+  | 'inHospitalCareMinutes'
   | 'dialysisFlag'
   | 'advancedExpense'
   | 'hospitalStaffName'
@@ -270,13 +295,20 @@ export type NewResultDestination = Pick<
   | 'ancillaryServiceFeeAmount'
   | 'specialFeeAmount'
   | 'specialTransportCategory'
+  | 'inHospitalAccompanimentFlag'
 > & { legs: NewResultLeg[] }
 
-// 実績のヘッダ更新で編集できるのはこれらのフィールドのみ(搬送日・利用者・元依頼は
-// 下書き生成時に確定し、以後は変更しない)
+// 実績のヘッダ更新で編集できるのはこれらのフィールドのみ(利用者・元依頼は
+// 下書き生成時に確定し、以後は変更しない。搬送日は入力ミスの訂正のため編集可能)
 export type ResultHeaderInput = Pick<
   TransportResult,
-  'kokuhorenClaimFlag' | 'snapshotCareLevel' | 'snapshotBenefitRate' | 'cancellationFeeAmount' | 'remarks'
+  | 'transportDate'
+  | 'kokuhorenClaimFlag'
+  | 'snapshotCareLevel'
+  | 'snapshotBenefitRate'
+  | 'cancellationFeeAmount'
+  | 'taxiTicketCount'
+  | 'remarks'
 >
 
 export interface NewTransportResultInput {
@@ -393,6 +425,8 @@ export interface InvoiceData {
   yearMonth: string
   lineItems: InvoiceLineItem[]
   cancellationFeeTotal: number
+  // タクシー券枚数×450円の合計(自動計算)。手入力の`taxiTicketOffsetAmount`調整額とは別枠で表示する
+  taxiTicketTotal: number
 }
 
 // 請求書印刷時に手動で指定する調整項目
@@ -440,6 +474,7 @@ export type NewUser = Pick<
   | 'wheelchairFlag'
   | 'careManager'
   | 'contractDate'
+  | 'isContractor'
   | 'remarks'
 >
 export type NewUserInsuranceCertificate = Omit<
